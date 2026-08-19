@@ -1,5 +1,7 @@
+import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 from pathlib import Path
@@ -44,11 +46,13 @@ from bambu_monitor import (  # noqa: E402
     PersistentState,
     PrinterRuntime,
     TelegramClient,
+    clean_snapshots,
     extract_telegram_chats,
     extract_telegram_id_requests,
     find_telegram_chat_ids,
     load_config,
     run_bambu_connection_test,
+    run_scheduled_snapshot_cleanup,
 )
 
 
@@ -286,6 +290,46 @@ class ConnectionTestTests(unittest.TestCase):
             mqtt_test.assert_called_once_with(cfg["printers"][0], 3)
             images = list(output_dir.glob("Test_P1S/*.jpg"))
             self.assertEqual(len(images), 1)
+
+
+class SnapshotCleanupTests(unittest.TestCase):
+    def test_deletes_only_snapshot_images_and_preserves_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "snapshots"
+            printer = root / "P1S"
+            printer.mkdir(parents=True)
+            (printer / "one.jpg").write_bytes(b"jpeg")
+            (printer / "two.JPEG").write_bytes(b"jpeg")
+            keep = printer / "keep.txt"
+            keep.write_text("keep")
+
+            self.assertEqual(clean_snapshots(root), 2)
+            self.assertTrue(root.is_dir())
+            self.assertTrue(keep.exists())
+            self.assertFalse((printer / "one.jpg").exists())
+
+    def test_refuses_home_directory(self):
+        with self.assertRaisesRegex(ValueError, "unsafe"):
+            clean_snapshots(Path.home())
+
+    def test_scheduled_cleanup_preserves_recent_images(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "snapshots"
+            root.mkdir()
+            old = root / "old.jpg"
+            recent = root / "recent.jpg"
+            old.write_bytes(b"old")
+            recent.write_bytes(b"recent")
+            old_time = time.time() - 2 * 24 * 60 * 60
+            os.utime(old, (old_time, old_time))
+
+            removed = run_scheduled_snapshot_cleanup(
+                {"snapshot_retention_days": 1}, root
+            )
+
+            self.assertEqual(removed, 1)
+            self.assertFalse(old.exists())
+            self.assertTrue(recent.exists())
 
 if __name__ == "__main__":
     unittest.main()

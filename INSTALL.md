@@ -88,6 +88,34 @@ Anleitung folgt im Abschnitt [Telegram-Chat-ID ermitteln](#telegram-chat-id-ermi
 
 ## Installation
 
+### Alternative: Docker Compose
+
+Voraussetzungen: Docker Engine mit Compose-Plugin. Danach im Projektverzeichnis:
+
+```bash
+cp config.example.yaml config.yaml
+nano config.yaml
+docker compose up -d --build
+docker compose logs -f
+```
+
+`config.yaml` wird nur lesbar in den Container eingebunden. `state.json` und
+Snapshots liegen im benannten Volume `bambu-data`. Das Image läuft ohne
+Root-Rechte und enthält bereits `ffmpeg` für die geplante P2S-/RTSPS-
+Kameraunterstützung.
+
+Verbindungstest im Container:
+
+```bash
+docker compose run --rm bambu-telegram-monitor \
+  --config /etc/bambu-telegram/config.yaml \
+  --test-bambu \
+  --test-output-dir /var/lib/bambu-telegram/connection-tests
+```
+
+Der anschließende Abschnitt beschreibt alternativ die klassische systemd-
+Installation.
+
 ### 1. Pakete
 
 ```bash
@@ -130,6 +158,8 @@ log_level: INFO
 data_dir: /var/lib/bambu-telegram
 snapshot_dir: /var/lib/bambu-telegram/snapshots
 state_file: /var/lib/bambu-telegram/state.json
+snapshot_retention_days: 7
+snapshot_cleanup_interval_hours: 6
 
 printers:
   - name: P1S Büro
@@ -352,6 +382,33 @@ Damit lässt sich der Telegram-Teil unabhängig vom Drucker testen.
 ```text
 /var/lib/bambu-telegram/snapshots/
 ```
+
+Gespeicherte JPEG-Snapshots löschen, ohne `state.json` oder die Konfiguration zu
+verändern:
+
+```bash
+sudo -u bambu-monitor /opt/bambu-telegram/venv/bin/python \
+  /opt/bambu-telegram/bambu_monitor.py \
+  --config /etc/bambu-telegram/config.yaml \
+  --clean-snapshots
+```
+
+Der Befehl löscht ausschließlich reguläre `.jpg`-/`.jpeg`-Dateien unterhalb des
+konfigurierten `snapshot_dir`, überspringt symbolische Links und protokolliert
+jede entfernte Datei.
+
+Der laufende Service bereinigt Snapshots zusätzlich automatisch. Standardmäßig
+werden kurz nach dem Start und danach alle sechs Stunden Bilder entfernt, die
+älter als sieben Tage sind:
+
+```yaml
+snapshot_retention_days: 7
+snapshot_cleanup_interval_hours: 6
+```
+
+`snapshot_retention_days: 0` deaktiviert die automatische Bereinigung. Ein Wert
+von `0` für `snapshot_cleanup_interval_hours` deaktiviert die periodische
+Ausführung ebenfalls. `state.json` wird dabei nicht verändert.
 
 ## Persistenter Zustand
 

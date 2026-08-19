@@ -1,0 +1,16 @@
+services:
+  bambu-telegram-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bambu-telegram-monitor:local
+    container_name: bambu-telegram-monitor
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/etc/bambu-telegram/config.yaml:ro
+      - bambu-data:/var/lib/bambu-telegram
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  bambu-data:

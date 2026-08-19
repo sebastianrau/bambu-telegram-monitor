@@ -36,6 +36,62 @@ sudo systemctl start bambu-telegram
 sudo journalctl -u bambu-telegram -f
 ```
 
+## Docker
+
+Create a local `config.yaml` from `config.example.yaml`. Keep the container data
+paths from the example (`/var/lib/bambu-telegram`), then build and start:
+
+```bash
+cp config.example.yaml config.yaml
+# Edit config.yaml and insert the printer and Telegram credentials.
+docker compose up -d --build
+docker compose logs -f
+```
+
+Stop the monitor with:
+
+```bash
+docker compose down
+```
+
+Delete stored JPEG snapshots while preserving state and configuration:
+
+```bash
+.venv/bin/python bambu_monitor.py -c ./config.yaml --clean-snapshots
+```
+
+In Docker:
+
+```bash
+docker compose run --rm bambu-telegram-monitor \
+  --config /etc/bambu-telegram/config.yaml \
+  --clean-snapshots
+```
+
+The running service also removes expired snapshots automatically. Defaults:
+
+```yaml
+snapshot_retention_days: 7
+snapshot_cleanup_interval_hours: 6
+```
+
+Cleanup runs shortly after service startup and then at the configured interval.
+Set `snapshot_retention_days: 0` to disable automatic cleanup.
+
+Snapshots and persistent event state are stored in the named Docker volume
+`bambu-data`. The configuration is mounted read-only and excluded from the image
+build. The image runs as an unprivileged user and includes `ffmpeg` for the
+planned P2S/X1/H2 RTSPS camera adapter.
+
+Run the Bambu connection test inside the container:
+
+```bash
+docker compose run --rm bambu-telegram-monitor \
+  --config /etc/bambu-telegram/config.yaml \
+  --test-bambu \
+  --test-output-dir /var/lib/bambu-telegram/connection-tests
+```
+
 ## Lokaler Verbindungstest
 
 MQTT und Kamera aller aktivierten Drucker testen, einen Screenshot lokal speichern

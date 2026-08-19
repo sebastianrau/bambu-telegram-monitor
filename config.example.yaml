@@ -5,6 +5,11 @@ data_dir: /var/lib/bambu-telegram
 snapshot_dir: /var/lib/bambu-telegram/snapshots
 state_file: /var/lib/bambu-telegram/state.json
 
+# The service removes older snapshots on startup and at this interval.
+# Set retention_days to 0 to disable automatic deletion.
+snapshot_retention_days: 7
+snapshot_cleanup_interval_hours: 6
+
 printers:
   - name: P1S Büro
     enabled: true

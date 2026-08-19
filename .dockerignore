@@ -1,0 +1,19 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.py[cod]
+*.log
+.DS_Store
+
+# Never copy local credentials or runtime data into an image.
+config.yaml
+.env
+data
+snapshots
+bambu-test-snapshots
+test-results
+tests
+*.jpg
+*.jpeg
