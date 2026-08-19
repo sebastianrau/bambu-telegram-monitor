@@ -1,0 +1,61 @@
+# /etc/bambu-telegram/config.yaml
+
+log_level: INFO
+data_dir: /var/lib/bambu-telegram
+snapshot_dir: /var/lib/bambu-telegram/snapshots
+state_file: /var/lib/bambu-telegram/state.json
+
+printers:
+  - name: P1S Büro
+    enabled: true
+    host: 192.168.192.50
+    serial: "01P00A123456789"
+    access_code: "12345678"
+    camera_timeout_seconds: 10
+    # Discard buffered frames after connecting so the saved image is current.
+    camera_warmup_frames: 2
+    event_queue_size: 16
+    delivery_attempts: 3
+    delivery_retry_seconds: 5
+
+    notifications:
+      started: true
+      layer1: true
+      progress50: true
+      finished: true
+      pause: true
+      failed: true
+
+  - name: P1S Werkstatt
+    enabled: false
+    host: 192.168.192.51
+    serial: "01P00A987654321"
+    access_code: "87654321"
+    camera_timeout_seconds: 10
+
+    notifications:
+      started: true
+      layer1: true
+      progress50: true
+      finished: true
+      pause: true
+      failed: true
+
+telegram:
+  # Token received from @BotFather.
+  bot_token: "1234567890:AAExampleBotToken"
+
+  # Numeric ID of the private chat/group/channel that receives notifications.
+  chat_id: "123456789"
+
+  # Caption placeholders:
+  # {printer}, {milestone}, {progress}
+  caption: "🖨️ {printer}: {milestone} ({progress}%)"
+
+  # true = Telegram delivers without notification sound.
+  disable_notification: false
+
+  # true = Telegram protects the sent message from forwarding/saving where supported.
+  protect_content: false
+
+  timeout_seconds: 30
