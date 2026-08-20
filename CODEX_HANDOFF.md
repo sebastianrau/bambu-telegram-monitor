@@ -10,7 +10,7 @@ Notifications with a current P1S camera image for:
 
 1. Layer 1 complete
 2. 50 % progress
-3. Print reaches 100 % progress
+3. Print reaches 99 % progress
 4. Pause
 5. Failure/cancellation
 
@@ -19,8 +19,8 @@ The notification transport has been changed from WhatsApp Cloud API to **Telegra
 ## Decisions already made
 
 - The final snapshot is triggered by the transition from a previously observed
-  `mc_percent < 100` to `mc_percent >= 100`. The same MQTT delta may already
-  carry `gcode_state = FINISH`, but FINISH alone is not the trigger.
+  `mc_percent < 99` to `mc_percent >= 99`. Later 100% or FINISH reports do not
+  emit a duplicate.
 - Layer 1 complete means `layer_num >= 2`.
 - `FAILED` is presented neutrally as `Druck abgebrochen/fehlgeschlagen`.
 - P1 MQTT reports are partial/delta; deep-merge before evaluation.
@@ -76,7 +76,7 @@ Do not alter trigger behavior. Refactor I/O so the MQTT callback only merges sta
 - layer 1 -> layer 2 emits once
 - 49 -> 50 -> 51 emits 50% once
 - 99% while RUNNING does not emit the final snapshot
-- 99 -> 100% while RUNNING emits the final snapshot once
+- 98 -> 99% while RUNNING emits the final snapshot once
 - a later FINISH does not emit a duplicate
 - repeated PAUSE delta reports do not duplicate
 - RUNNING -> FAILED emits failed once

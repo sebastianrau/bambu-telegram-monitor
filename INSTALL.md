@@ -12,7 +12,7 @@ Der **Bambu P1S Telegram Monitor** überwacht einen oder mehrere Bambu Lab P1S i
 - Bild beim Start eines neuen Druckauftrags
 - Bild nach abgeschlossenem Layer 1
 - Bild bei 50 % Druckfortschritt
-- Bild beim ersten Erreichen von 100 % Druckfortschritt
+- Bild beim ersten Erreichen von 99 % Druckfortschritt
 - Bild bei Pause (`PAUSE`)
 - Bild bei Abbruch/Fehler (`FAILED`)
 - persistenter Zustand gegen doppelte Meldungen
@@ -260,7 +260,7 @@ Verfügbare Platzhalter in `caption`:
 Beispiel:
 
 ```text
-🖨️ P1S Büro: 100 % erreicht (100%)
+🖨️ P1S Büro: 99 % erreicht (99%)
 ```
 
 ### Manuellen Snapshot über Telegram anfordern
@@ -333,7 +333,7 @@ device/<SERIAL>/request
 | `started` | neuer Druckauftrag in `PREPARE` oder `RUNNING` | Druck gestartet |
 | `layer1` | `layer_num >= 2` | Layer 1 fertig |
 | `progress50` | `mc_percent >= 50` | 50 % erreicht |
-| `finished` | Übergang von `mc_percent < 100` auf `>= 100` | 100 % erreicht |
+| `finished` | Übergang von `mc_percent < 99` auf `>= 99` | 99 % erreicht |
 | `pause` | `gcode_state == PAUSE` | Druck pausiert |
 | `failed` | `gcode_state == FAILED` | Druck abgebrochen/fehlgeschlagen |
 

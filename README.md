@@ -7,7 +7,7 @@ Linux service that monitors one or more Bambu Lab P1S printers and sends a curre
 - Print started
 - Layer 1 finished
 - 50 % progress
-- 100 % print progress (captured before the later `FINISH` state)
+- 99 % print progress (captured before completion)
 - Print paused (`PAUSE`)
 - Print failed/cancelled (`FAILED`)
 

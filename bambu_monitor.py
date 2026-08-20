@@ -457,20 +457,19 @@ class PrinterRuntime:
             self.fire("started", "Druck gestartet", progress or 0, layer, total_layers)
             return
 
-        # Trigger on the actual progress crossing. P1S firmware can report the
-        # first 100% value in the same delta as FINISH, so the state must not be
-        # used as a gate. Requiring a previously observed value below 100 avoids
+        # Trigger shortly before completion on the actual progress crossing.
+        # Requiring a previously observed value below 99 avoids
         # stale notifications when starting against an old completed job.
         persisted = self.state_store.printer(self.serial)
         if (
             notifications.get("finished", True)
             and progress is not None
-            and progress >= 100
+            and progress >= 99
             and previous_progress is not None
-            and previous_progress < 100
+            and previous_progress < 99
             and not persisted.get("finished_sent", False)
         ):
-            self.fire("finished", "100 % erreicht", progress, layer, total_layers)
+            self.fire("finished", "99 % erreicht", progress, layer, total_layers)
             return
 
         # Finished layer 1. Restrict milestones to an active/paused job so that

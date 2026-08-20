@@ -131,23 +131,23 @@ class RuntimeTests(unittest.TestCase):
             self.runtime.evaluate({"task_id": "job-1", "gcode_state": "RUNNING", "mc_percent": progress, "layer_num": 20})
         self.assertEqual(self.events, ["progress50"])
 
-    def test_99_percent_running_does_not_finish(self):
-        self.seed_running(98)
+    def test_98_percent_running_does_not_finish(self):
+        self.seed_running(97)
         self.state.update_printer("SERIAL1", {"layer1_sent": True, "progress50_sent": True})
-        self.runtime.evaluate({"task_id": "job-1", "gcode_state": "RUNNING", "mc_percent": 99, "layer_num": 99})
+        self.runtime.evaluate({"task_id": "job-1", "gcode_state": "RUNNING", "mc_percent": 98, "layer_num": 98})
         self.assertNotIn("finished", self.events)
 
-    def test_100_percent_running_emits_once_and_finish_does_not_duplicate(self):
-        self.seed_running(99)
+    def test_99_percent_running_emits_once_and_later_finish_does_not_duplicate(self):
+        self.seed_running(98)
         self.state.update_printer("SERIAL1", {"layer1_sent": True, "progress50_sent": True})
-        complete = {"task_id": "job-1", "gcode_state": "RUNNING", "mc_percent": 100, "layer_num": 100}
+        complete = {"task_id": "job-1", "gcode_state": "RUNNING", "mc_percent": 99, "layer_num": 99}
         terminal = {"task_id": "job-1", "gcode_state": "FINISH", "mc_percent": 100, "layer_num": 100}
         self.runtime.evaluate(complete)
         self.runtime.evaluate(terminal)
         self.assertEqual(self.events, ["finished"])
 
-    def test_100_percent_arriving_with_finish_emits_final_snapshot(self):
-        self.seed_running(99)
+    def test_jump_from_98_to_100_with_finish_emits_final_snapshot(self):
+        self.seed_running(98)
         self.state.update_printer("SERIAL1", {
             "layer1_sent": True,
             "progress50_sent": True,
@@ -158,12 +158,12 @@ class RuntimeTests(unittest.TestCase):
         })
         self.assertEqual(self.events, ["finished"])
 
-    def test_finish_below_100_does_not_emit_final_snapshot(self):
-        self.seed_running(99)
+    def test_finish_below_99_does_not_emit_final_snapshot(self):
+        self.seed_running(98)
         self.state.update_printer("SERIAL1", {"layer1_sent": True, "progress50_sent": True})
         self.runtime.evaluate({
             "task_id": "job-1", "gcode_state": "FINISH",
-            "mc_percent": 99, "layer_num": 100,
+            "mc_percent": 98, "layer_num": 100,
         })
         self.assertNotIn("finished", self.events)
 
