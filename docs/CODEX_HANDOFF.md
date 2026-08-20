@@ -26,17 +26,17 @@ The notification transport has been changed from WhatsApp Cloud API to **Telegra
 - P1 MQTT reports are partial/delta; deep-merge before evaluation.
 - P1S camera uses local TLS/JPEG on TCP 6000.
 - Telegram photos are sent directly with Bot API `sendPhoto`.
-- Sent flags persist across service restarts.
+- Sent flags persist across container restarts.
 - The running daemon accepts `/snapshot` and `/snapshop` from the configured
   Telegram chat and queues a fresh camera image without changing milestone flags.
 
-## Deployment names
+## Docker deployment
 
 ```text
-Service:      bambu-telegram.service
-Application:  /opt/bambu-telegram
+Container:    bambu-telegram-monitor
+Image:        bambu-telegram-monitor:local
 Config:       /etc/bambu-telegram/config.yaml
-Data:         /var/lib/bambu-telegram
+Data volume:  bambu-telegram-data -> /var/lib/bambu-telegram
 ```
 
 ## Telegram config
@@ -55,9 +55,9 @@ telegram:
 
 Read:
 
-1. `AGENTS.md`
+1. `docs/AGENTS.md`
 2. `README.md`
-3. `INSTALL.md`
+3. `docs/INSTALL.md`
 4. `config.example.yaml`
 5. `bambu_monitor.py`
 

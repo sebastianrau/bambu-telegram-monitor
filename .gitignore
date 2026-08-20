@@ -9,3 +9,4 @@ snapshots/
 *.log
 .DS_Store
 config.yaml
+data/

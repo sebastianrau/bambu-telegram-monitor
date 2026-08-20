@@ -1,6 +1,6 @@
 # Bambu P1S Telegram Monitor
 
-Linux service that monitors one or more Bambu Lab P1S printers and sends a current chamber-camera snapshot to Telegram at important print events.
+Dockerized monitor for one or more Bambu Lab P1S printers that sends a current chamber-camera snapshot to Telegram at important print events.
 
 ## Notifications
 
@@ -17,41 +17,30 @@ Linux service that monitors one or more Bambu Lab P1S printers and sends a curre
 - P1S camera TLS/JPEG: TCP 6000
 - Telegram Bot API: HTTPS
 - Configuration: YAML
-- Service manager: systemd
+- Deployment: Docker
 
 ## Documentation
 
-- [Installation and configuration](INSTALL.md)
-- [Manual Docker installation on Raspberry Pi](MANUAL_DOCKER_INSTALL.md)
-- [Codex handoff](CODEX_HANDOFF.md)
-- [Agent instructions](AGENTS.md)
+- [Installation and configuration](docs/INSTALL.md)
+- [Manual Docker installation on Raspberry Pi](docs/MANUAL_DOCKER_INSTALL.md)
+- [Codex handoff](docs/CODEX_HANDOFF.md)
+- [Agent instructions](docs/AGENTS.md)
 
-## Quick start
-
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv unzip
-sudo ./install.sh
-sudo nano /etc/bambu-telegram/config.yaml
-sudo systemctl start bambu-telegram
-sudo journalctl -u bambu-telegram -f
-```
-
-## Docker
+## Installation
 
 For installation with the included `Dockerfile`, follow the complete
-[manual Docker installation guide](MANUAL_DOCKER_INSTALL.md). It covers image
+[manual Docker installation guide](docs/MANUAL_DOCKER_INSTALL.md). It covers image
 building, configuration permissions, the persistent data volume, Telegram
 chat-ID lookup, container startup, logs, updates, and maintenance.
 
-The running service also removes expired snapshots automatically. Defaults:
+The running container also removes expired snapshots automatically. Defaults:
 
 ```yaml
 snapshot_retention_days: 7
 snapshot_cleanup_interval_hours: 6
 ```
 
-Cleanup runs shortly after service startup and then at the configured interval.
+Cleanup runs shortly after container startup and then at the configured interval.
 Set `snapshot_retention_days: 0` to disable automatic cleanup.
 
 The image runs as an unprivileged user. Configuration is mounted read-only;
@@ -60,46 +49,39 @@ in the manual guide. The documented `docker run` command also mounts
 `/etc/localtime` and `/etc/timezone` read-only so log timestamps use the host
 timezone.
 
-## Lokaler Verbindungstest
+## Verbindungstest im Container
 
 MQTT und Kamera aller aktivierten Drucker testen, einen Screenshot lokal speichern
 und anschließend beenden:
 
 ```bash
-/opt/bambu-telegram/venv/bin/python /opt/bambu-telegram/bambu_monitor.py \
+sudo docker run --rm \
+  --mount type=bind,src=/etc/bambu-telegram/config.yaml,dst=/etc/bambu-telegram/config.yaml,readonly \
+  --mount type=volume,src=bambu-telegram-data,dst=/var/lib/bambu-telegram \
+  bambu-telegram-monitor:local \
   --config /etc/bambu-telegram/config.yaml \
-  --test-bambu
+  --test-bambu \
+  --test-output-dir /var/lib/bambu-telegram/connection-tests
 ```
 
-Die Screenshots werden standardmäßig unter `./bambu-test-snapshots/` gespeichert.
-Mit `--test-output-dir <Verzeichnis>` kann das Ziel geändert werden. Der Test sendet
-nichts an Telegram und liefert Exit-Code `0` bei Erfolg beziehungsweise `1` bei
-mindestens einem fehlgeschlagenen Druckertest.
+Die Screenshots werden im persistenten Docker-Volume gespeichert. Der Test
+sendet nichts an Telegram und liefert Exit-Code `0` bei Erfolg beziehungsweise
+`1` bei mindestens einem fehlgeschlagenen Druckertest.
 
 Damit kein gepufferter alter Kameraframe gespeichert wird, verwirft der Monitor
 standardmäßig zwei gültige Frames. Dies lässt sich pro Drucker mit
 `camera_warmup_frames` konfigurieren.
-
-## Lokaler Dauerbetrieb auf macOS/Linux
-
-Beim Start ohne systemd müssen beschreibbare lokale Datenpfade in der
-Konfiguration verwendet werden:
-
-```yaml
-data_dir: ./data
-snapshot_dir: ./data/snapshots
-state_file: ./data/state.json
-```
-
-Die Produktionspfade unter `/var/lib/bambu-telegram` sind für die Installation
-als Linux-Systemdienst vorgesehen.
 
 ## Telegram-Chat-ID ermitteln
 
 In `config.yaml` wird dafür zunächst nur `telegram.bot_token` benötigt. Danach:
 
 ```bash
-.venv/bin/python bambu_monitor.py -c ./config.yaml --find-telegram-chat-id
+sudo docker run --rm \
+  --mount type=bind,src=/etc/bambu-telegram/config.yaml,dst=/etc/bambu-telegram/config.yaml,readonly \
+  bambu-telegram-monitor:local \
+  --config /etc/bambu-telegram/config.yaml \
+  --find-telegram-chat-id
 ```
 
 Während das Programm wartet, `/id` an den Bot senden. Der Bot antwortet im

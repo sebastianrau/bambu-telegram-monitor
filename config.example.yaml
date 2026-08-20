@@ -1,11 +1,11 @@
-# Docker/systemd paths. For an unprivileged local run, use ./data equivalents.
+# Paths inside the Docker container. Persist them with the documented volume.
 
 log_level: INFO
 data_dir: /var/lib/bambu-telegram
 snapshot_dir: /var/lib/bambu-telegram/snapshots
 state_file: /var/lib/bambu-telegram/state.json
 
-# The service removes older snapshots on startup and at this interval.
+# The container removes older snapshots on startup and at this interval.
 # Set snapshot_retention_days to 0 to disable automatic deletion.
 snapshot_retention_days: 7
 snapshot_cleanup_interval_hours: 6

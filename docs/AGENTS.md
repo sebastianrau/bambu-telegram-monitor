@@ -90,7 +90,7 @@ Never commit:
 4. Add delivery retry/backoff.
 5. Add startup configuration validation.
 6. Add CLI tests for MQTT, camera, and Telegram.
-7. Support environment variables/systemd credentials for secrets.
+7. Support Docker secrets or environment variables for secrets.
 
 ## Validation
 
@@ -108,9 +108,10 @@ python3 -m unittest discover -v
 
 - `bambu_monitor.py`
 - `config.example.yaml`
-- `bambu-telegram.service`
-- `install.sh`
+- `Dockerfile`
+- `update.sh`
+- `docs/MANUAL_DOCKER_INSTALL.md`
 - `requirements.txt`
-- `INSTALL.md`
+- `docs/INSTALL.md`
 - `README.md`
-- `CODEX_HANDOFF.md`
+- `docs/CODEX_HANDOFF.md`
