@@ -156,12 +156,16 @@ sudo docker run -d \
   --name bambu-telegram-monitor \
   --restart unless-stopped \
   --security-opt no-new-privileges:true \
+  --mount type=bind,src=/etc/localtime,dst=/etc/localtime,readonly \
+  --mount type=bind,src=/etc/timezone,dst=/etc/timezone,readonly \
   --mount type=bind,src=/etc/bambu-telegram/config.yaml,dst=/etc/bambu-telegram/config.yaml,readonly \
   --mount type=volume,src=bambu-telegram-data,dst=/var/lib/bambu-telegram \
   bambu-telegram-monitor:local
 ```
 
 Der Container startet nach einem Neustart des Raspberry Pi automatisch.
+`/etc/localtime` und `/etc/timezone` werden nur lesbar eingebunden, damit die
+Zeitstempel im Container dieselbe lokale Zeitzone wie der Raspberry Pi nutzen.
 
 ## 11. Funktion prüfen
 

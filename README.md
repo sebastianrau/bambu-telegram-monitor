@@ -56,7 +56,9 @@ Set `snapshot_retention_days: 0` to disable automatic cleanup.
 
 The image runs as an unprivileged user. Configuration is mounted read-only;
 snapshots and persistent event state are stored in the Docker volume documented
-in the manual guide.
+in the manual guide. The documented `docker run` command also mounts
+`/etc/localtime` and `/etc/timezone` read-only so log timestamps use the host
+timezone.
 
 ## Lokaler Verbindungstest
 
