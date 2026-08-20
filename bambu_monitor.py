@@ -196,6 +196,9 @@ class PrinterRuntime:
     client: Optional[mqtt.Client] = None
     event_queue: queue.Queue = field(init=False)
     worker: Optional[threading.Thread] = field(default=None, init=False)
+    connected_at: Optional[float] = field(default=None, init=False)
+    last_message_at: Optional[float] = field(default=None, init=False)
+    message_count: int = field(default=0, init=False)
 
     def __post_init__(self):
         self.event_queue = queue.Queue(
@@ -263,9 +266,19 @@ class PrinterRuntime:
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code != 0:
-            LOG.error("[%s] MQTT connection failed: %s", self.name, reason_code)
+            LOG.error(
+                "[%s] MQTT connection failed: reason=%s code=%s host=%s:8883 properties=%s",
+                self.name,
+                reason_code,
+                getattr(reason_code, "value", reason_code),
+                self.host,
+                mqtt_properties_summary(properties),
+            )
             return
 
+        self.connected_at = time.monotonic()
+        self.last_message_at = None
+        self.message_count = 0
         topic = f"device/{self.serial}/report"
         LOG.info("[%s] MQTT connected, subscribing %s", self.name, topic)
         client.subscribe(topic, qos=0)
@@ -284,9 +297,37 @@ class PrinterRuntime:
 
     def on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties):
         if not STOP.is_set():
-            LOG.warning("[%s] MQTT disconnected: %s", self.name, reason_code)
+            now = time.monotonic()
+            connected_seconds = (
+                now - self.connected_at if self.connected_at is not None else None
+            )
+            last_message_seconds = (
+                now - self.last_message_at if self.last_message_at is not None else None
+            )
+            LOG.warning(
+                "[%s] MQTT disconnected: reason=%s code=%s failure=%s "
+                "server_packet=%s host=%s:8883 connected_for=%s "
+                "last_message_ago=%s messages=%d reconnect=automatic properties=%s",
+                self.name,
+                reason_code,
+                getattr(reason_code, "value", reason_code),
+                getattr(reason_code, "is_failure", "unknown"),
+                getattr(
+                    disconnect_flags,
+                    "is_disconnect_packet_from_server",
+                    "unknown",
+                ),
+                self.host,
+                format_duration(connected_seconds),
+                format_duration(last_message_seconds),
+                self.message_count,
+                mqtt_properties_summary(properties),
+            )
+        self.connected_at = None
 
     def on_message(self, client, userdata, msg):
+        self.last_message_at = time.monotonic()
+        self.message_count += 1
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
         except Exception:
@@ -444,15 +485,17 @@ class PrinterRuntime:
             self.fire("pause", "Druck pausiert", progress or 0, layer, total_layers)
             return
 
-        # FINISH is the authoritative completion signal. We deliberately do not
-        # send the final notification merely because mc_percent reached 100.
+        # Capture at the first reported 100% rather than waiting for FINISH.
+        # FINISH can arrive later, after the useful final camera moment.
         persisted = self.state_store.printer(self.serial)
         if (
             notifications.get("finished", True)
-            and state == "FINISH"
+            and progress is not None
+            and progress >= 100
+            and state in {"RUNNING", "PAUSE"}
             and not persisted.get("finished_sent", False)
         ):
-            self.fire("finished", "Druck fertig", progress if progress is not None else 100, layer, total_layers)
+            self.fire("finished", "100 % erreicht", progress, layer, total_layers)
             return
 
         # Bambu uses FAILED for unsuccessful/aborted prints. The protocol does
@@ -509,10 +552,10 @@ class PrinterRuntime:
                 capture_p1s_snapshot(
                     self.host,
                     self.access_code,
-                output,
-                timeout=float(self.cfg.get("camera_timeout_seconds", 10)),
-                warmup_frames=int(self.cfg.get("camera_warmup_frames", 2)),
-            )
+                    output,
+                    timeout=float(self.cfg.get("camera_timeout_seconds", 10)),
+                    warmup_frames=int(self.cfg.get("camera_warmup_frames", 2)),
+                )
                 LOG.info("[%s] snapshot saved: %s", self.name, output)
                 self.telegram.send_image(output, self.name, milestone_label, progress)
                 return
@@ -536,6 +579,23 @@ def as_int(value) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def format_duration(seconds: Optional[float]) -> str:
+    if seconds is None:
+        return "n/a"
+    return f"{max(0.0, seconds):.1f}s"
+
+
+def mqtt_properties_summary(properties) -> str:
+    if properties is None:
+        return "none"
+    details = []
+    for attribute in ("ReasonString", "ServerReference"):
+        value = getattr(properties, attribute, None)
+        if value:
+            details.append(f"{attribute}={value}")
+    return ",".join(details) if details else "none"
 
 
 def load_config(path: Path, require_telegram: bool = True,

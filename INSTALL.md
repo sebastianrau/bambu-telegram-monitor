@@ -12,7 +12,7 @@ Der **Bambu P1S Telegram Monitor** überwacht einen oder mehrere Bambu Lab P1S i
 - Bild beim Start eines neuen Druckauftrags
 - Bild nach abgeschlossenem Layer 1
 - Bild bei 50 % Druckfortschritt
-- Bild bei tatsächlichem Druckende (`FINISH`)
+- Bild beim ersten Erreichen von 100 % Druckfortschritt
 - Bild bei Pause (`PAUSE`)
 - Bild bei Abbruch/Fehler (`FAILED`)
 - persistenter Zustand gegen doppelte Meldungen
@@ -275,7 +275,7 @@ Verfügbare Platzhalter in `caption`:
 Beispiel:
 
 ```text
-🖨️ P1S Büro: Druck fertig (100%)
+🖨️ P1S Büro: 100 % erreicht (100%)
 ```
 
 ## P1S-Konfiguration
@@ -308,7 +308,7 @@ device/<SERIAL>/request
 | `started` | neuer Druckauftrag in `PREPARE` oder `RUNNING` | Druck gestartet |
 | `layer1` | `layer_num >= 2` | Layer 1 fertig |
 | `progress50` | `mc_percent >= 50` | 50 % erreicht |
-| `finished` | `gcode_state == FINISH` | Druck fertig |
+| `finished` | erstes `mc_percent >= 100` bei `RUNNING`/`PAUSE` | 100 % erreicht |
 | `pause` | `gcode_state == PAUSE` | Druck pausiert |
 | `failed` | `gcode_state == FAILED` | Druck abgebrochen/fehlgeschlagen |
 
@@ -433,6 +433,10 @@ Prüfen:
 ### MQTT verbindet nicht
 
 Prüfen:
+
+- Bei Abbrüchen enthält die Warnung den numerischen Reason-Code, ob das
+  Disconnect-Paket vom Drucker kam, Verbindungsdauer, letztes empfangenes Paket
+  und den automatischen Reconnect-Status.
 
 - P1S IP/Hostname
 - Seriennummer

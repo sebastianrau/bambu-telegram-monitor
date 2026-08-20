@@ -50,7 +50,9 @@ from bambu_monitor import (  # noqa: E402
     extract_telegram_chats,
     extract_telegram_id_requests,
     find_telegram_chat_ids,
+    format_duration,
     load_config,
+    mqtt_properties_summary,
     run_bambu_connection_test,
     run_scheduled_snapshot_cleanup,
 )
@@ -128,19 +130,63 @@ class RuntimeTests(unittest.TestCase):
             self.runtime.evaluate({"task_id": "job-1", "gcode_state": "RUNNING", "mc_percent": progress, "layer_num": 20})
         self.assertEqual(self.events, ["progress50"])
 
-    def test_100_percent_running_does_not_finish(self):
-        self.seed_running(99)
+    def test_99_percent_running_does_not_finish(self):
+        self.seed_running(98)
         self.state.update_printer("SERIAL1", {"layer1_sent": True, "progress50_sent": True})
-        self.runtime.evaluate({"task_id": "job-1", "gcode_state": "RUNNING", "mc_percent": 100, "layer_num": 100})
+        self.runtime.evaluate({"task_id": "job-1", "gcode_state": "RUNNING", "mc_percent": 99, "layer_num": 99})
         self.assertNotIn("finished", self.events)
 
-    def test_running_to_finish_emits_once(self):
+    def test_100_percent_running_emits_once_and_finish_does_not_duplicate(self):
         self.seed_running(99)
         self.state.update_printer("SERIAL1", {"layer1_sent": True, "progress50_sent": True})
+        complete = {"task_id": "job-1", "gcode_state": "RUNNING", "mc_percent": 100, "layer_num": 100}
         terminal = {"task_id": "job-1", "gcode_state": "FINISH", "mc_percent": 100, "layer_num": 100}
-        self.runtime.evaluate(terminal)
+        self.runtime.evaluate(complete)
         self.runtime.evaluate(terminal)
         self.assertEqual(self.events, ["finished"])
+
+    def test_finish_below_100_does_not_emit_final_snapshot(self):
+        self.seed_running(99)
+        self.state.update_printer("SERIAL1", {"layer1_sent": True, "progress50_sent": True})
+        self.runtime.evaluate({
+            "task_id": "job-1", "gcode_state": "FINISH",
+            "mc_percent": 99, "layer_num": 100,
+        })
+        self.assertNotIn("finished", self.events)
+
+    def test_stale_100_percent_idle_does_not_emit_final_snapshot(self):
+        stale = {
+            "task_id": "old-job", "gcode_state": "IDLE",
+            "mc_percent": 100, "layer_num": 100,
+        }
+        self.runtime.evaluate(stale)
+        self.runtime.evaluate(stale)
+        self.assertNotIn("finished", self.events)
+
+    def test_disconnect_log_contains_diagnostics(self):
+        reason = types.SimpleNamespace(value=128, is_failure=True)
+        flags = types.SimpleNamespace(is_disconnect_packet_from_server=False)
+        properties = types.SimpleNamespace(
+            ReasonString="printer closed connection",
+            ServerReference=None,
+        )
+        self.runtime.connected_at = time.monotonic() - 12
+        self.runtime.last_message_at = time.monotonic() - 3
+        self.runtime.message_count = 42
+
+        with self.assertLogs("bambu-monitor", level="WARNING") as logs:
+            self.runtime.on_disconnect(None, None, flags, reason, properties)
+
+        message = logs.output[0]
+        self.assertIn("code=128", message)
+        self.assertIn("failure=True", message)
+        self.assertIn("messages=42", message)
+        self.assertIn("printer closed connection", message)
+
+    def test_mqtt_log_format_helpers(self):
+        self.assertEqual(format_duration(None), "n/a")
+        self.assertEqual(format_duration(1.25), "1.2s")
+        self.assertEqual(mqtt_properties_summary(None), "none")
 
     def test_terminal_state_at_start_is_a_persistent_baseline(self):
         terminal = {"task_id": "old-job", "gcode_state": "FINISH", "mc_percent": 100, "layer_num": 100}
