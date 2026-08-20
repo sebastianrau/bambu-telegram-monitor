@@ -362,6 +362,7 @@ class PrinterRuntime:
 
         persisted = self.state_store.printer(self.serial)
         previous_task = persisted.get("task_id")
+        previous_progress = as_int(persisted.get("last_progress"))
         had_job_history = bool(
             persisted.get("last_gcode_state")
             or persisted.get("task_id")
@@ -445,6 +446,22 @@ class PrinterRuntime:
             self.fire("started", "Druck gestartet", progress or 0, layer, total_layers)
             return
 
+        # Trigger on the actual progress crossing. P1S firmware can report the
+        # first 100% value in the same delta as FINISH, so the state must not be
+        # used as a gate. Requiring a previously observed value below 100 avoids
+        # stale notifications when starting against an old completed job.
+        persisted = self.state_store.printer(self.serial)
+        if (
+            notifications.get("finished", True)
+            and progress is not None
+            and progress >= 100
+            and previous_progress is not None
+            and previous_progress < 100
+            and not persisted.get("finished_sent", False)
+        ):
+            self.fire("finished", "100 % erreicht", progress, layer, total_layers)
+            return
+
         # Finished layer 1. Restrict milestones to an active/paused job so that
         # reconnecting to an old FINISH state cannot create stale messages.
         if (
@@ -483,19 +500,6 @@ class PrinterRuntime:
             and not persisted.get("pause_sent", False)
         ):
             self.fire("pause", "Druck pausiert", progress or 0, layer, total_layers)
-            return
-
-        # Capture at the first reported 100% rather than waiting for FINISH.
-        # FINISH can arrive later, after the useful final camera moment.
-        persisted = self.state_store.printer(self.serial)
-        if (
-            notifications.get("finished", True)
-            and progress is not None
-            and progress >= 100
-            and state in {"RUNNING", "PAUSE"}
-            and not persisted.get("finished_sent", False)
-        ):
-            self.fire("finished", "100 % erreicht", progress, layer, total_layers)
             return
 
         # Bambu uses FAILED for unsuccessful/aborted prints. The protocol does

@@ -18,8 +18,9 @@ The notification transport has been changed from WhatsApp Cloud API to **Telegra
 
 ## Decisions already made
 
-- The final snapshot is triggered by the first `mc_percent >= 100`; do not wait
-  for the later `gcode_state = FINISH` state.
+- The final snapshot is triggered by the transition from a previously observed
+  `mc_percent < 100` to `mc_percent >= 100`. The same MQTT delta may already
+  carry `gcode_state = FINISH`, but FINISH alone is not the trigger.
 - Layer 1 complete means `layer_num >= 2`.
 - `FAILED` is presented neutrally as `Druck abgebrochen/fehlgeschlagen`.
 - P1 MQTT reports are partial/delta; deep-merge before evaluation.

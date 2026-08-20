@@ -145,6 +145,18 @@ class RuntimeTests(unittest.TestCase):
         self.runtime.evaluate(terminal)
         self.assertEqual(self.events, ["finished"])
 
+    def test_100_percent_arriving_with_finish_emits_final_snapshot(self):
+        self.seed_running(99)
+        self.state.update_printer("SERIAL1", {
+            "layer1_sent": True,
+            "progress50_sent": True,
+        })
+        self.runtime.evaluate({
+            "task_id": "job-1", "gcode_state": "FINISH",
+            "mc_percent": 100, "layer_num": 100,
+        })
+        self.assertEqual(self.events, ["finished"])
+
     def test_finish_below_100_does_not_emit_final_snapshot(self):
         self.seed_running(99)
         self.state.update_printer("SERIAL1", {"layer1_sent": True, "progress50_sent": True})

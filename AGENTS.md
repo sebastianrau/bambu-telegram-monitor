@@ -21,8 +21,9 @@ Do not change without explicit requirement:
 - `started`: newly detected job in `PREPARE` or `RUNNING`; do not emit when the
   first persisted observation is already an active print
 - `progress50`: first `mc_percent >= 50`
-- `finished`: first `mc_percent >= 100` while `RUNNING` or `PAUSE`; do not wait
-  for `gcode_state == "FINISH"`
+- `finished`: transition from a previously observed `mc_percent < 100` to
+  `mc_percent >= 100`; the same delta may already contain `gcode_state ==
+  "FINISH"`, but FINISH alone must not trigger it
 - `pause`: transition into `gcode_state == "PAUSE"`
 - `failed`: `gcode_state == "FAILED"`
 - User-facing FAILED wording: `Druck abgebrochen/fehlgeschlagen`

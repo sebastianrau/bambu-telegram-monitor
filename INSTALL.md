@@ -88,33 +88,15 @@ Anleitung folgt im Abschnitt [Telegram-Chat-ID ermitteln](#telegram-chat-id-ermi
 
 ## Installation
 
-### Alternative: Docker Compose
+### Alternative: Docker
 
-Voraussetzungen: Docker Engine mit Compose-Plugin. Danach im Projektverzeichnis:
+Für die Installation mit dem enthaltenen `Dockerfile` siehe die vollständige
+[Manuelle Docker-Installation](MANUAL_DOCKER_INSTALL.md). Sie beschreibt den
+Image-Build, restriktive Konfigurationsrechte, das persistente Volume, den Start
+ohne Compose sowie Aktualisierung und Wartung.
 
-```bash
-cp config.example.yaml config.yaml
-nano config.yaml
-docker compose up -d --build
-docker compose logs -f
-```
-
-`config.yaml` wird nur lesbar in den Container eingebunden. `state.json` und
-Snapshots liegen im benannten Volume `bambu-data`. Das Image läuft ohne
-Root-Rechte und enthält bereits `ffmpeg` für die geplante P2S-/RTSPS-
-Kameraunterstützung.
-
-Verbindungstest im Container:
-
-```bash
-docker compose run --rm bambu-telegram-monitor \
-  --config /etc/bambu-telegram/config.yaml \
-  --test-bambu \
-  --test-output-dir /var/lib/bambu-telegram/connection-tests
-```
-
-Der anschließende Abschnitt beschreibt alternativ die klassische systemd-
-Installation.
+Der anschließende Abschnitt beschreibt alternativ die klassische
+systemd-Installation.
 
 ### 1. Pakete
 
@@ -308,7 +290,7 @@ device/<SERIAL>/request
 | `started` | neuer Druckauftrag in `PREPARE` oder `RUNNING` | Druck gestartet |
 | `layer1` | `layer_num >= 2` | Layer 1 fertig |
 | `progress50` | `mc_percent >= 50` | 50 % erreicht |
-| `finished` | erstes `mc_percent >= 100` bei `RUNNING`/`PAUSE` | 100 % erreicht |
+| `finished` | Übergang von `mc_percent < 100` auf `>= 100` | 100 % erreicht |
 | `pause` | `gcode_state == PAUSE` | Druck pausiert |
 | `failed` | `gcode_state == FAILED` | Druck abgebrochen/fehlgeschlagen |
 
