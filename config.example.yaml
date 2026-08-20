@@ -64,3 +64,8 @@ telegram:
   protect_content: false
 
   timeout_seconds: 30
+
+  # Poll Telegram for manual camera commands. Only chat_id is authorized.
+  commands_enabled: true
+  command_poll_timeout_seconds: 20
+  command_cooldown_seconds: 10

@@ -109,6 +109,17 @@ class TelegramClient:
 
         LOG.info("Telegram sent: %s / %s", printer_name, milestone)
 
+    def send_text(self, chat_id: str, message: str):
+        response = requests.post(
+            f"{self.base}/sendMessage",
+            data={"chat_id": str(chat_id), "text": message},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok", False):
+            raise RuntimeError(f"Telegram API error: {payload}")
+
 
 def capture_p1s_snapshot(host: str, access_code: str, output: Path,
                          timeout: float = 10.0, warmup_frames: int = 2):
@@ -519,12 +530,34 @@ class PrinterRuntime:
         # Reserve the event before queueing to avoid duplicate MQTT-triggered work.
         self.state_store.update_printer(self.serial, {flag: True})
 
-        event = (milestone_key, milestone_label, progress, layer, total_layers)
+        event = (milestone_key, milestone_label, progress, layer, total_layers, flag)
         try:
             self.event_queue.put_nowait(event)
         except queue.Full:
             self.state_store.update_printer(self.serial, {flag: False})
             LOG.error("[%s] event queue full, dropping %s", self.name, milestone_label)
+
+    def request_manual_snapshot(self) -> bool:
+        with self.lock:
+            print_state = self.mqtt_state.get("print", {})
+            progress = as_int(print_state.get("mc_percent")) or 0
+            layer = as_int(print_state.get("layer_num"))
+            total_layers = as_int(print_state.get("total_layer_num"))
+        event = (
+            "manual",
+            "Manueller Snapshot",
+            progress,
+            layer,
+            total_layers,
+            None,
+        )
+        try:
+            self.event_queue.put_nowait(event)
+            LOG.info("[%s] manual snapshot queued", self.name)
+            return True
+        except queue.Full:
+            LOG.error("[%s] event queue full, manual snapshot rejected", self.name)
+            return False
 
     def _event_worker(self):
         while True:
@@ -537,8 +570,8 @@ class PrinterRuntime:
                 self.event_queue.task_done()
 
     def _deliver_event(self, milestone_key: str, milestone_label: str, progress: int,
-                       layer: Optional[int], total_layers: Optional[int]):
-        flag = f"{milestone_key}_sent"
+                       layer: Optional[int], total_layers: Optional[int],
+                       flag: Optional[str]):
 
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in self.name)
@@ -573,7 +606,178 @@ class PrinterRuntime:
                 break
 
         # Allow a later MQTT report to enqueue a fresh delivery cycle.
-        self.state_store.update_printer(self.serial, {flag: False})
+        if flag is not None:
+            self.state_store.update_printer(self.serial, {flag: False})
+
+
+class TelegramCommandPoller:
+    COMMANDS = {"/snapshot", "/snapshop"}
+
+    def __init__(self, cfg: dict, telegram: TelegramClient,
+                 runtimes: list[PrinterRuntime]):
+        self.cfg = cfg
+        self.telegram = telegram
+        self.runtimes = runtimes
+        self.enabled = bool(cfg.get("commands_enabled", True))
+        self.poll_timeout = int(cfg.get("command_poll_timeout_seconds", 20))
+        self.cooldown = float(cfg.get("command_cooldown_seconds", 10))
+        self.thread: Optional[threading.Thread] = None
+        self.offset: Optional[int] = None
+        self.last_command_at: Dict[str, float] = {}
+
+    def start(self):
+        if not self.enabled:
+            LOG.info("Telegram command polling disabled")
+            return
+        self.thread = threading.Thread(
+            target=self._run,
+            name="telegram-commands",
+            daemon=True,
+        )
+        self.thread.start()
+        LOG.info("Telegram commands enabled: /snapshot, /snapshop")
+
+    def stop(self):
+        if self.thread:
+            self.thread.join(timeout=self.poll_timeout + 10)
+
+    def _run(self):
+        while not STOP.is_set():
+            try:
+                self._discard_pending_updates()
+                break
+            except Exception:
+                LOG.exception(
+                    "Could not initialize Telegram command polling; retrying in 5 seconds"
+                )
+                if STOP.wait(5):
+                    return
+
+        while not STOP.is_set():
+            try:
+                params = {
+                    "timeout": self.poll_timeout,
+                    "allowed_updates": json.dumps(["message", "channel_post"]),
+                }
+                if self.offset is not None:
+                    params["offset"] = self.offset
+                response = requests.get(
+                    f"{self.telegram.base}/getUpdates",
+                    params=params,
+                    timeout=self.poll_timeout + 10,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if not payload.get("ok", False):
+                    raise RuntimeError(
+                        f"Telegram getUpdates error: {payload.get('description', payload)}"
+                    )
+                for update in payload.get("result", []):
+                    update_id = update.get("update_id")
+                    if update_id is not None:
+                        self.offset = int(update_id) + 1
+                    self.handle_update(update)
+            except Exception:
+                if not STOP.is_set():
+                    LOG.exception("Telegram command polling failed; retrying in 5 seconds")
+                if STOP.wait(5):
+                    return
+
+    def _discard_pending_updates(self):
+        response = requests.get(
+            f"{self.telegram.base}/getUpdates",
+            params={"offset": -1, "limit": 1, "timeout": 0},
+            timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok", False):
+            raise RuntimeError(
+                f"Telegram getUpdates error: {payload.get('description', payload)}"
+            )
+        updates = payload.get("result", [])
+        if updates and updates[-1].get("update_id") is not None:
+            self.offset = int(updates[-1]["update_id"]) + 1
+
+    def handle_update(self, update: dict) -> bool:
+        message = update.get("message") or update.get("channel_post")
+        if not isinstance(message, dict):
+            return False
+        chat = message.get("chat")
+        if not isinstance(chat, dict) or "id" not in chat:
+            return False
+        text = str(message.get("text", "")).strip()
+        if not text:
+            return False
+        parts = text.split(maxsplit=1)
+        command = parts[0].split("@", 1)[0].lower()
+        if command not in self.COMMANDS:
+            return False
+
+        chat_id = str(chat["id"])
+        if chat_id != self.telegram.chat_id:
+            LOG.warning("Ignoring Telegram snapshot command from unauthorized chat %s", chat_id)
+            return False
+
+        now = time.monotonic()
+        last = self.last_command_at.get(chat_id)
+        if last is not None and now - last < self.cooldown:
+            remaining = max(1, int(self.cooldown - (now - last) + 0.999))
+            self.telegram.send_text(
+                chat_id,
+                f"Bitte {remaining} Sekunde(n) bis zum nächsten Snapshot warten.",
+            )
+            return True
+
+        selector = parts[1].strip() if len(parts) > 1 else ""
+        targets = self._select_runtimes(selector)
+        if not targets:
+            available = ", ".join(runtime.name for runtime in self.runtimes)
+            self.telegram.send_text(
+                chat_id,
+                f"Drucker nicht gefunden. Verfügbar: {available or 'keine'}",
+            )
+            return True
+        if selector and len(targets) > 1:
+            matches = ", ".join(
+                f"{runtime.name} ({runtime.serial})" for runtime in targets
+            )
+            self.telegram.send_text(
+                chat_id,
+                f"Auswahl ist nicht eindeutig. Treffer: {matches}",
+            )
+            return True
+
+        queued = sum(1 for runtime in targets if runtime.request_manual_snapshot())
+        if queued == 0:
+            self.telegram.send_text(
+                chat_id,
+                "Snapshot konnte nicht eingereiht werden. Bitte später erneut versuchen.",
+            )
+            return True
+
+        self.last_command_at[chat_id] = now
+        LOG.info(
+            "Telegram snapshot command accepted for %d printer(s) from authorized chat",
+            queued,
+        )
+        return True
+
+    def _select_runtimes(self, selector: str) -> list[PrinterRuntime]:
+        if not selector:
+            return list(self.runtimes)
+        wanted = selector.casefold()
+        exact = [
+            runtime for runtime in self.runtimes
+            if runtime.name.casefold() == wanted or runtime.serial.casefold() == wanted
+        ]
+        if exact:
+            return exact
+        return [
+            runtime for runtime in self.runtimes
+            if wanted in runtime.name.casefold()
+            or runtime.serial.casefold().startswith(wanted)
+        ]
 
 
 def as_int(value) -> Optional[int]:
@@ -637,6 +841,10 @@ def load_config(path: Path, require_telegram: bool = True,
         for key in required_keys:
             if not telegram.get(key):
                 raise ValueError(f"telegram is missing {key}")
+        if int(telegram.get("command_poll_timeout_seconds", 20)) < 1:
+            raise ValueError("telegram command_poll_timeout_seconds must be at least 1")
+        if float(telegram.get("command_cooldown_seconds", 10)) < 0:
+            raise ValueError("telegram command_cooldown_seconds must not be negative")
     return cfg
 
 
@@ -1053,6 +1261,9 @@ def main():
     for runtime in runtimes:
         runtime.run()
 
+    command_poller = TelegramCommandPoller(cfg["telegram"], telegram, runtimes)
+    command_poller.start()
+
     LOG.info("Monitoring %d printer(s)", len(runtimes))
     cleanup_interval = float(cfg.get("snapshot_cleanup_interval_hours", 6)) * 60 * 60
     next_cleanup = 0.0
@@ -1067,6 +1278,7 @@ def main():
                 next_cleanup = time.monotonic() + cleanup_interval
     finally:
         LOG.info("Stopping")
+        command_poller.stop()
         for runtime in runtimes:
             runtime.stop()
     return 0

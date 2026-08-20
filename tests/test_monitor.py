@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from bambu_monitor import (  # noqa: E402
     PersistentState,
     PrinterRuntime,
+    TelegramCommandPoller,
     TelegramClient,
     clean_snapshots,
     extract_telegram_chats,
@@ -200,6 +201,15 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(format_duration(1.25), "1.2s")
         self.assertEqual(mqtt_properties_summary(None), "none")
 
+    def test_manual_snapshot_is_queued_without_persistent_flag(self):
+        self.runtime.mqtt_state = {
+            "print": {"mc_percent": 37, "layer_num": 4, "total_layer_num": 20}
+        }
+        self.assertTrue(self.runtime.request_manual_snapshot())
+        event = self.runtime.event_queue.get_nowait()
+        self.assertEqual(event[:3], ("manual", "Manueller Snapshot", 37))
+        self.assertIsNone(event[-1])
+
     def test_terminal_state_at_start_is_a_persistent_baseline(self):
         terminal = {"task_id": "old-job", "gcode_state": "FINISH", "mc_percent": 100, "layer_num": 100}
         self.runtime.evaluate(terminal)
@@ -321,6 +331,76 @@ class PersistenceAndTelegramTests(unittest.TestCase):
         self.assertEqual(get.call_args_list[1].kwargs["params"]["offset"], 41)
         self.assertEqual(post.call_args.kwargs["data"]["chat_id"], "123")
         self.assertIn("123", post.call_args.kwargs["data"]["text"])
+
+
+class TelegramCommandTests(unittest.TestCase):
+    def setUp(self):
+        self.telegram = Mock()
+        self.telegram.chat_id = "123"
+        self.telegram.base = "https://api.telegram.org/bottoken"
+        self.runtime = Mock()
+        self.runtime.name = "P1S Basti"
+        self.runtime.serial = "SERIAL1"
+        self.runtime.request_manual_snapshot.return_value = True
+        self.poller = TelegramCommandPoller(
+            {"commands_enabled": True, "command_cooldown_seconds": 0},
+            self.telegram,
+            [self.runtime],
+        )
+
+    def test_snapshop_command_queues_camera_picture(self):
+        handled = self.poller.handle_update({
+            "message": {"text": "/snapshop", "chat": {"id": 123}},
+        })
+        self.assertTrue(handled)
+        self.runtime.request_manual_snapshot.assert_called_once_with()
+
+    def test_snapshot_command_selects_printer_by_name(self):
+        handled = self.poller.handle_update({
+            "message": {
+                "text": "/snapshot P1S Basti",
+                "chat": {"id": 123},
+            },
+        })
+        self.assertTrue(handled)
+        self.runtime.request_manual_snapshot.assert_called_once_with()
+
+    def test_snapshot_command_matches_name_part(self):
+        handled = self.poller.handle_update({
+            "message": {"text": "/snapshot basti", "chat": {"id": 123}},
+        })
+        self.assertTrue(handled)
+        self.runtime.request_manual_snapshot.assert_called_once_with()
+
+    def test_snapshot_command_matches_serial_prefix(self):
+        handled = self.poller.handle_update({
+            "message": {"text": "/snapshot seri", "chat": {"id": 123}},
+        })
+        self.assertTrue(handled)
+        self.runtime.request_manual_snapshot.assert_called_once_with()
+
+    def test_ambiguous_partial_match_is_rejected(self):
+        second = Mock()
+        second.name = "P1S Basti Werkstatt"
+        second.serial = "SERIAL2"
+        self.poller.runtimes.append(second)
+
+        handled = self.poller.handle_update({
+            "message": {"text": "/snapshot basti", "chat": {"id": 123}},
+        })
+
+        self.assertTrue(handled)
+        self.runtime.request_manual_snapshot.assert_not_called()
+        second.request_manual_snapshot.assert_not_called()
+        self.telegram.send_text.assert_called_once()
+        self.assertIn("nicht eindeutig", self.telegram.send_text.call_args.args[1])
+
+    def test_command_from_other_chat_is_ignored(self):
+        handled = self.poller.handle_update({
+            "message": {"text": "/snapshot", "chat": {"id": 999}},
+        })
+        self.assertFalse(handled)
+        self.runtime.request_manual_snapshot.assert_not_called()
 
 
 class ConnectionTestTests(unittest.TestCase):

@@ -107,6 +107,34 @@ die ID wird zusätzlich im lokalen Log ausgegeben.
 die Wartezeit verlängert werden; `--telegram-include-old` berücksichtigt auch
 bereits vorhandene Updates.
 
+## Telegram camera command
+
+While the monitor is running, send either command from the configured Telegram
+chat:
+
+```text
+/snapshop
+/snapshot
+```
+
+The monitor captures a fresh camera image and sends it back to Telegram. With
+multiple enabled printers, the command sends one image per printer. Select a
+single printer using any case-insensitive part of its configured name, or the
+beginning of its serial number:
+
+```text
+/snapshot P1S Büro
+/snapshot Büro
+/snapshot 01P00A
+```
+
+Exact matches take priority. If a partial selector matches multiple printers,
+the bot lists the matches and asks for a more specific value.
+
+Only `telegram.chat_id` is authorized. Commands from other chats are ignored.
+The default cooldown is 10 seconds. Telegram webhooks cannot be used at the same
+time because the monitor receives commands through `getUpdates`.
+
 ## Security
 
 Never commit real Bambu LAN Access Codes or Telegram bot tokens.

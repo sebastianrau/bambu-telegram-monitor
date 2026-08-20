@@ -245,6 +245,9 @@ sudo -u bambu-monitor /opt/bambu-telegram/venv/bin/python \
 | `disable_notification` | `true` sendet lautlos |
 | `protect_content` | schützt Weiterleitung/Speichern, soweit Telegram dies unterstützt |
 | `timeout_seconds` | HTTP-Timeout |
+| `commands_enabled` | aktiviert `/snapshot` und `/snapshop` |
+| `command_poll_timeout_seconds` | Long-Polling-Zeit für Telegram-Befehle |
+| `command_cooldown_seconds` | Mindestabstand zwischen manuellen Snapshots |
 
 Verfügbare Platzhalter in `caption`:
 
@@ -259,6 +262,46 @@ Beispiel:
 ```text
 🖨️ P1S Büro: 100 % erreicht (100%)
 ```
+
+### Manuellen Snapshot über Telegram anfordern
+
+Während der Monitor läuft, im konfigurierten Chat einen der folgenden Befehle
+senden:
+
+```text
+/snapshop
+/snapshot
+```
+
+Beide Befehle nehmen ein aktuelles Kamerabild auf und senden es zurück. Sind
+mehrere Drucker aktiviert, wird standardmäßig von jedem ein Bild gesendet. Ein
+einzelner Drucker kann über einen beliebigen Teil seines Namens oder den Anfang
+seiner Seriennummer ausgewählt werden. Die Suche unterscheidet nicht zwischen
+Groß- und Kleinschreibung:
+
+```text
+/snapshot P1S Büro
+/snapshot Büro
+/snapshot 01P00A
+```
+
+Exakte Treffer haben Vorrang. Falls eine Teilangabe zu mehreren Druckern passt,
+sendet der Bot die Trefferliste und fordert eine eindeutigere Angabe an.
+
+Nur Nachrichten aus `telegram.chat_id` werden akzeptiert. Andere Chats werden
+ignoriert. Die Einstellungen lauten:
+
+```yaml
+telegram:
+  commands_enabled: true
+  command_poll_timeout_seconds: 20
+  command_cooldown_seconds: 10
+```
+
+Der Bot darf keinen aktiven Webhook verwenden, weil Telegram `getUpdates` und
+Webhooks nicht gleichzeitig erlaubt. Zur erneuten Chat-ID-Suche muss der
+laufende Service beziehungsweise Container vorher gestoppt werden, damit nicht
+zwei Prozesse dieselben Updates abrufen.
 
 ## P1S-Konfiguration
 

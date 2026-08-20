@@ -49,6 +49,13 @@ POST https://api.telegram.org/bot<TOKEN>/sendPhoto
 
 and uploads the JPEG as multipart/form-data.
 
+The running daemon also consumes Telegram `getUpdates` for `/snapshot` and the
+legacy/user-requested alias `/snapshop`. Only the configured `chat_id` is
+authorized. Manual snapshots must use the bounded printer event queue and must
+not alter persistent milestone flags. Printer selectors match any
+case-insensitive part of the configured name or the beginning of the serial;
+ambiguous partial matches must not execute.
+
 Do not log the bot token.
 
 ## Protocol assumptions

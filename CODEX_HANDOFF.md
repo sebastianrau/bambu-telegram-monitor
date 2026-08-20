@@ -27,6 +27,8 @@ The notification transport has been changed from WhatsApp Cloud API to **Telegra
 - P1S camera uses local TLS/JPEG on TCP 6000.
 - Telegram photos are sent directly with Bot API `sendPhoto`.
 - Sent flags persist across service restarts.
+- The running daemon accepts `/snapshot` and `/snapshop` from the configured
+  Telegram chat and queues a fresh camera image without changing milestone flags.
 
 ## Deployment names
 

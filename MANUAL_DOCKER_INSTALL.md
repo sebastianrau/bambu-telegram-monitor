@@ -179,6 +179,36 @@ Monitoring 1 printer(s)
 MQTT connected
 ```
 
+## 12. Manuellen Kamerasnapshot über Telegram testen
+
+Im unter `telegram.chat_id` konfigurierten Chat senden:
+
+```text
+/snapshop
+```
+
+Alternativ wird auch die korrekte Schreibweise unterstützt:
+
+```text
+/snapshot
+```
+
+Der Container nimmt ein aktuelles Kamerabild auf und sendet es in denselben
+Chat. Bei mehreren aktivierten Druckern kann ein Drucker über einen beliebigen
+Teil seines Namens oder den Anfang seiner Seriennummer ausgewählt werden:
+
+```text
+/snapshot P1S Büro
+/snapshot Büro
+/snapshot 01P00A
+```
+
+Die Suche ignoriert Groß-/Kleinschreibung. Mehrdeutige Teiltreffer werden nicht
+ausgeführt; der Bot gibt stattdessen die passenden Drucker aus.
+
+Nur die konfigurierte Chat-ID ist berechtigt. Die Befehle verwenden Telegram
+`getUpdates`; ein Telegram-Webhook darf daher nicht gleichzeitig aktiv sein.
+
 ## Container verwalten
 
 ```bash
