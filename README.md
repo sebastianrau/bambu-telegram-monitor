@@ -1,58 +1,62 @@
 # Bambu P1S Telegram Monitor
 
-Dockerized monitor for one or more Bambu Lab P1S printers that sends a current chamber-camera snapshot to Telegram at important print events.
+Docker-basierter Monitor für einen oder mehrere Bambu-Lab-P1S-Drucker. Bei
+wichtigen Druckereignissen nimmt er ein aktuelles Bild der Innenraumkamera auf
+und sendet es über Telegram.
 
-## Notifications
+## Benachrichtigungen
 
-- Print started
-- Layer 1 finished
-- 50 % progress
-- 99 % print progress (captured before completion)
-- Print paused (`PAUSE`)
-- Print failed/cancelled (`FAILED`)
+- Druck gestartet
+- Layer 1 abgeschlossen
+- 50 % Druckfortschritt
+- 99 % Druckfortschritt, noch vor Druckende
+- Druck pausiert (`PAUSE`)
+- Druck fehlgeschlagen oder abgebrochen (`FAILED`)
 
-## Runtime
+## Laufzeit
 
 - Bambu MQTT/TLS: TCP 8883
-- P1S camera TLS/JPEG: TCP 6000
+- P1S-Kamera mit TLS/JPEG: TCP 6000
 - Telegram Bot API: HTTPS
-- Configuration: YAML
-- Deployment: Docker
+- Konfiguration: YAML
+- Bereitstellung: Docker
 
-## Documentation
+## Dokumentation
 
-- [Installation and configuration](docs/INSTALL.md)
-- [Manual Docker installation on Raspberry Pi](docs/MANUAL_DOCKER_INSTALL.md)
-- [Codex handoff](docs/CODEX_HANDOFF.md)
-- [Agent instructions](docs/AGENTS.md)
+- [Installation und Konfiguration mit Docker](docs/MANUAL_DOCKER_INSTALL.md)
+- [Codex-Übergabe](docs/CODEX_HANDOFF.md)
+- [Agentenanweisungen](docs/AGENTS.md)
 
 ## Installation
 
-For installation with the included `Dockerfile`, follow the complete
-[manual Docker installation guide](docs/MANUAL_DOCKER_INSTALL.md). It covers image
-building, configuration permissions, the persistent data volume, Telegram
-chat-ID lookup, container startup, logs, updates, and maintenance.
+Die vollständige
+[Anleitung zur manuellen Docker-Installation](docs/MANUAL_DOCKER_INSTALL.md)
+beschreibt den Image-Build, die Konfigurationsrechte, das persistente
+Daten-Volume, die Ermittlung der Telegram-Chat-ID, den Containerstart, Logs,
+Aktualisierungen und Wartung.
 
-The running container also removes expired snapshots automatically. Defaults:
+Der laufende Container entfernt abgelaufene Snapshots automatisch. Die
+Standardwerte lauten:
 
 ```yaml
 snapshot_retention_days: 7
 snapshot_cleanup_interval_hours: 6
 ```
 
-Cleanup runs shortly after container startup and then at the configured interval.
-Set `snapshot_retention_days: 0` to disable automatic cleanup.
+Die Bereinigung startet kurz nach dem Containerstart und wird anschließend im
+konfigurierten Intervall wiederholt. Mit `snapshot_retention_days: 0` wird die
+automatische Bereinigung deaktiviert.
 
-The image runs as an unprivileged user. Configuration is mounted read-only;
-snapshots and persistent event state are stored in the Docker volume documented
-in the manual guide. The documented `docker run` command also mounts
-`/etc/localtime` and `/etc/timezone` read-only so log timestamps use the host
-timezone.
+Das Image läuft als unprivilegierter Benutzer. Die Konfiguration wird nur lesbar
+eingebunden. Snapshots und der persistente Ereignisstatus liegen im
+dokumentierten Docker-Volume. Der `docker run`-Befehl bindet außerdem
+`/etc/localtime` und `/etc/timezone` nur lesbar ein, damit die Zeitstempel im
+Container der Zeitzone des Hosts entsprechen.
 
 ## Verbindungstest im Container
 
-MQTT und Kamera aller aktivierten Drucker testen, einen Screenshot lokal speichern
-und anschließend beenden:
+Mit diesem Befehl werden MQTT und Kamera aller aktivierten Drucker getestet,
+ein Screenshot im Daten-Volume gespeichert und der Container danach beendet:
 
 ```bash
 sudo docker run --rm \
@@ -64,9 +68,8 @@ sudo docker run --rm \
   --test-output-dir /var/lib/bambu-telegram/connection-tests
 ```
 
-Die Screenshots werden im persistenten Docker-Volume gespeichert. Der Test
-sendet nichts an Telegram und liefert Exit-Code `0` bei Erfolg beziehungsweise
-`1` bei mindestens einem fehlgeschlagenen Druckertest.
+Der Test sendet nichts an Telegram und liefert Exit-Code `0` bei Erfolg oder
+`1`, wenn mindestens ein Druckertest fehlschlägt.
 
 Damit kein gepufferter alter Kameraframe gespeichert wird, verwirft der Monitor
 standardmäßig zwei gültige Frames. Dies lässt sich pro Drucker mit
@@ -74,7 +77,7 @@ standardmäßig zwei gültige Frames. Dies lässt sich pro Drucker mit
 
 ## Telegram-Chat-ID ermitteln
 
-In `config.yaml` wird dafür zunächst nur `telegram.bot_token` benötigt. Danach:
+Zunächst wird in der Konfiguration nur `telegram.bot_token` benötigt. Danach:
 
 ```bash
 sudo docker run --rm \
@@ -85,26 +88,25 @@ sudo docker run --rm \
 ```
 
 Während das Programm wartet, `/id` an den Bot senden. Der Bot antwortet im
-gleichen privaten Chat oder in der gleichen Gruppe mit der numerischen Chat-ID;
-die ID wird zusätzlich im lokalen Log ausgegeben.
-Ältere wartende Updates werden vorher verworfen. Mit `--telegram-wait 60` kann
-die Wartezeit verlängert werden; `--telegram-include-old` berücksichtigt auch
-bereits vorhandene Updates.
+gleichen privaten Chat oder in der gleichen Gruppe mit der numerischen Chat-ID.
+Die ID wird zusätzlich im lokalen Log ausgegeben. Alte wartende Updates werden
+vorher verworfen. Mit `--telegram-wait 60` lässt sich die Wartezeit verlängern;
+`--telegram-include-old` berücksichtigt auch bereits vorhandene Updates.
 
-## Telegram camera command
+## Kamerabefehl über Telegram
 
-While the monitor is running, send either command from the configured Telegram
-chat:
+Während der Monitor läuft, kann im konfigurierten Telegram-Chat einer der
+folgenden Befehle gesendet werden:
 
 ```text
 /snapshop
 /snapshot
 ```
 
-The monitor captures a fresh camera image and sends it back to Telegram. With
-multiple enabled printers, the command sends one image per printer. Select a
-single printer using any case-insensitive part of its configured name, or the
-beginning of its serial number:
+Der Monitor nimmt ein aktuelles Kamerabild auf und sendet es an Telegram. Bei
+mehreren aktivierten Druckern wird standardmäßig von jedem Drucker ein Bild
+gesendet. Ein einzelner Drucker kann über einen beliebigen Teil seines Namens
+oder den Anfang seiner Seriennummer ausgewählt werden:
 
 ```text
 /snapshot P1S Büro
@@ -112,13 +114,15 @@ beginning of its serial number:
 /snapshot 01P00A
 ```
 
-Exact matches take priority. If a partial selector matches multiple printers,
-the bot lists the matches and asks for a more specific value.
+Exakte Treffer haben Vorrang. Falls eine Teilangabe zu mehreren Druckern passt,
+listet der Bot die Treffer auf und fordert eine eindeutigere Auswahl an.
 
-Only `telegram.chat_id` is authorized. Commands from other chats are ignored.
-The default cooldown is 10 seconds. Telegram webhooks cannot be used at the same
-time because the monitor receives commands through `getUpdates`.
+Nur `telegram.chat_id` ist berechtigt. Befehle aus anderen Chats werden
+ignoriert. Die Standardsperrzeit beträgt zehn Sekunden. Telegram-Webhooks
+können nicht gleichzeitig verwendet werden, weil der Monitor Befehle über
+`getUpdates` empfängt.
 
-## Security
+## Sicherheit
 
-Never commit real Bambu LAN Access Codes or Telegram bot tokens.
+Echte Bambu-LAN-Access-Codes und Telegram-Bot-Token dürfen niemals committet
+werden.

@@ -1,37 +1,41 @@
 # AGENTS.md
 
-## Project
+## Projekt
 
-Bambu P1S Telegram Monitor is a Python daemon for monitoring multiple Bambu Lab P1S printers on a trusted LAN and sending event snapshots through the Telegram Bot API.
+Der Bambu P1S Telegram Monitor ist ein Python-Daemon zur Überwachung mehrerer
+Bambu-Lab-P1S-Drucker in einem vertrauenswürdigen lokalen Netzwerk. Bei
+Druckereignissen sendet er Snapshots über die Telegram Bot API.
 
-## Core flow
+## Kernablauf
 
-1. Connect to each configured printer via MQTT/TLS TCP 8883.
-2. Deep-merge partial MQTT reports into accumulated printer state.
-3. Detect configured milestones/state transitions.
-4. Capture a JPEG from the P1S camera using the local TLS protocol on TCP 6000.
-5. Send the JPEG using Telegram Bot API `sendPhoto`.
-6. Persist sent-event flags to avoid duplicate notifications after restarts.
+1. Verbindung zu jedem konfigurierten Drucker über MQTT/TLS auf TCP 8883.
+2. Tiefes Zusammenführen partieller MQTT-Berichte mit dem gesammelten Druckerstatus.
+3. Erkennen konfigurierter Meilensteine und Statusübergänge.
+4. Aufnehmen eines JPEGs über das lokale TLS-Kameraprotokoll auf TCP 6000.
+5. Senden des JPEGs über `sendPhoto` der Telegram Bot API.
+6. Persistieren versendeter Ereignisse, um Duplikate nach Neustarts zu vermeiden.
 
-## Required trigger semantics
+## Verbindliche Trigger-Semantik
 
-Do not change without explicit requirement:
+Nicht ohne ausdrückliche Anforderung ändern:
 
 - `layer1`: `layer_num >= 2`
-- `started`: newly detected job in `PREPARE` or `RUNNING`; do not emit when the
-  first persisted observation is already an active print
-- `progress50`: first `mc_percent >= 50`
-- `finished`: transition from a previously observed `mc_percent < 99` to
-  `mc_percent >= 99`; later 100%/FINISH reports must not duplicate it
-- `pause`: transition into `gcode_state == "PAUSE"`
+- `started`: neu erkannter Auftrag in `PREPARE` oder `RUNNING`; keine Meldung,
+  wenn die erste persistierte Beobachtung bereits einen aktiven Druck zeigt
+- `progress50`: erstes `mc_percent >= 50`
+- `finished`: Übergang von einem zuvor beobachteten `mc_percent < 99` zu
+  `mc_percent >= 99`; spätere Berichte mit 100 % oder `FINISH` dürfen keine
+  doppelte Meldung auslösen
+- `pause`: Übergang zu `gcode_state == "PAUSE"`
 - `failed`: `gcode_state == "FAILED"`
-- User-facing FAILED wording: `Druck abgebrochen/fehlgeschlagen`
+- Text für `FAILED`: `Druck abgebrochen/fehlgeschlagen`
 
-MQTT messages may be delta updates. Always merge before evaluation.
+MQTT-Nachrichten können Delta-Updates sein. Vor der Auswertung immer
+zusammenführen.
 
 ## Telegram
 
-Configuration:
+Konfiguration:
 
 ```yaml
 telegram:
@@ -40,71 +44,76 @@ telegram:
   caption: "🖨️ {printer}: {milestone} ({progress}%)"
 ```
 
-Current implementation calls:
+Die aktuelle Implementierung ruft Folgendes auf:
 
 ```text
 POST https://api.telegram.org/bot<TOKEN>/sendPhoto
 ```
 
-and uploads the JPEG as multipart/form-data.
+Das JPEG wird als `multipart/form-data` hochgeladen.
 
-The running daemon also consumes Telegram `getUpdates` for `/snapshot` and the
-legacy/user-requested alias `/snapshop`. Only the configured `chat_id` is
-authorized. Manual snapshots must use the bounded printer event queue and must
-not alter persistent milestone flags. Printer selectors match any
-case-insensitive part of the configured name or the beginning of the serial;
-ambiguous partial matches must not execute.
+Der laufende Daemon verwendet Telegram `getUpdates` für `/snapshot` und den
+historischen, vom Benutzer gewünschten Alias `/snapshop`. Nur die konfigurierte
+`chat_id` ist berechtigt. Manuelle Snapshots müssen die begrenzte
+Drucker-Ereigniswarteschlange verwenden und dürfen persistente Meilensteinflags
+nicht verändern. Druckerauswahlen stimmen ohne Beachtung der Groß-/Kleinschreibung
+mit einem beliebigen Teil des konfigurierten Namens oder dem Anfang der
+Seriennummer überein. Mehrdeutige Teiltreffer dürfen nicht ausgeführt werden.
 
-Do not log the bot token.
+Den Bot-Token niemals protokollieren.
 
-## Protocol assumptions
+## Protokollannahmen
 
 ### Bambu MQTT
-- TLS TCP 8883
-- username `bblp`
-- password LAN Access Code
+
+- TLS auf TCP 8883
+- Benutzername `bblp`
+- Passwort ist der LAN-Access-Code
 - `device/<serial>/report`
 - `device/<serial>/request`
-- self-signed printer certificate
+- selbstsigniertes Druckerzertifikat
 
-### P1S camera
-- TLS TCP 6000
-- P1/A1 JPEG frame protocol
-- 80-byte auth packet
-- 16-byte frame header + JPEG payload
+### P1S-Kamera
 
-Keep reverse-engineered printer protocol code isolated.
+- TLS auf TCP 6000
+- P1/A1-JPEG-Frame-Protokoll
+- 80-Byte-Authentifizierungspaket
+- 16-Byte-Frame-Header mit anschließendem JPEG
 
-## Security
+Rückwärtsentwickelten Code für das Druckerprotokoll isoliert halten.
 
-Never commit:
-- Bambu LAN Access Codes
-- Telegram bot tokens
-- real production `config.yaml`
+## Sicherheit
 
-## Recommended engineering improvements
+Niemals committen:
 
-1. Unit-test state/milestone transitions.
-2. Move camera + Telegram HTTP work out of MQTT callback into a bounded worker queue.
-3. Add deterministic event IDs.
-4. Add delivery retry/backoff.
-5. Add startup configuration validation.
-6. Add CLI tests for MQTT, camera, and Telegram.
-7. Support Docker secrets or environment variables for secrets.
+- Bambu-LAN-Access-Codes
+- Telegram-Bot-Token
+- echte produktive `config.yaml`
 
-## Validation
+## Empfohlene technische Verbesserungen
+
+1. Status- und Meilensteinübergänge mit Unit-Tests absichern.
+2. Kamera- und Telegram-HTTP-Arbeit aus dem MQTT-Callback in eine begrenzte
+   Worker-Warteschlange verschieben.
+3. Deterministische Ereignis-IDs ergänzen.
+4. Wiederholungsversuche mit Backoff ergänzen.
+5. Konfiguration beim Start validieren.
+6. CLI-Tests für MQTT, Kamera und Telegram ergänzen.
+7. Docker-Secrets oder Umgebungsvariablen für Geheimnisse unterstützen.
+
+## Validierung
 
 ```bash
 python3 -m py_compile bambu_monitor.py
 ```
 
-If tests exist:
+Wenn Tests vorhanden sind:
 
 ```bash
 python3 -m unittest discover -v
 ```
 
-## Files
+## Dateien
 
 - `bambu_monitor.py`
 - `config.example.yaml`
@@ -112,6 +121,5 @@ python3 -m unittest discover -v
 - `update.sh`
 - `docs/MANUAL_DOCKER_INSTALL.md`
 - `requirements.txt`
-- `docs/INSTALL.md`
 - `README.md`
 - `docs/CODEX_HANDOFF.md`

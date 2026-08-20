@@ -99,7 +99,7 @@ cd /opt/bambu-telegram-monitor
 sudo docker build -t bambu-telegram-monitor:local .
 ```
 
-## 8. Telegram Chat-ID ermitteln
+## 8. Telegram-Chat-ID ermitteln
 
 Zuerst muss unter `telegram.bot_token` der von BotFather erhaltene Bot-Token in `/etc/bambu-telegram/config.yaml` eingetragen sein.
 

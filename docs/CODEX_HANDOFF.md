@@ -1,45 +1,50 @@
-# Codex Handoff
+# Codex-Übergabe
 
-## Goal
+## Ziel
 
-Continue development of the Bambu P1S Telegram Monitor without needing the originating chat.
+Die Entwicklung des Bambu P1S Telegram Monitors ohne Zugriff auf den
+ursprünglichen Chat fortsetzen.
 
-## Current user-approved scope
+## Aktuell freigegebener Funktionsumfang
 
-Notifications with a current P1S camera image for:
+Benachrichtigungen mit einem aktuellen Bild der P1S-Kamera bei:
 
-1. Layer 1 complete
-2. 50 % progress
-3. Print reaches 99 % progress
-4. Pause
-5. Failure/cancellation
+1. Start des Druckauftrags
+2. Abschluss von Layer 1
+3. 50 % Druckfortschritt
+4. Erreichen von 99 % Druckfortschritt
+5. Pause
+6. Fehler oder Abbruch
 
-The notification transport has been changed from WhatsApp Cloud API to **Telegram Bot API**. WhatsApp support is no longer part of the current project.
+Die Benachrichtigungen werden über die **Telegram Bot API** gesendet. WhatsApp
+gehört nicht mehr zum Funktionsumfang des Projekts.
 
-## Decisions already made
+## Bereits getroffene Entscheidungen
 
-- The final snapshot is triggered by the transition from a previously observed
-  `mc_percent < 99` to `mc_percent >= 99`. Later 100% or FINISH reports do not
-  emit a duplicate.
-- Layer 1 complete means `layer_num >= 2`.
-- `FAILED` is presented neutrally as `Druck abgebrochen/fehlgeschlagen`.
-- P1 MQTT reports are partial/delta; deep-merge before evaluation.
-- P1S camera uses local TLS/JPEG on TCP 6000.
-- Telegram photos are sent directly with Bot API `sendPhoto`.
-- Sent flags persist across container restarts.
-- The running daemon accepts `/snapshot` and `/snapshop` from the configured
-  Telegram chat and queues a fresh camera image without changing milestone flags.
+- Der letzte Snapshot wird beim Übergang von einem zuvor beobachteten
+  `mc_percent < 99` zu `mc_percent >= 99` ausgelöst. Spätere Berichte mit
+  100 % oder `FINISH` erzeugen kein Duplikat.
+- Layer 1 gilt bei `layer_num >= 2` als abgeschlossen.
+- `FAILED` wird neutral als `Druck abgebrochen/fehlgeschlagen` dargestellt.
+- P1-MQTT-Berichte sind partiell beziehungsweise Delta-Updates und müssen vor
+  der Auswertung tief zusammengeführt werden.
+- Die P1S-Kamera verwendet lokal TLS/JPEG auf TCP 6000.
+- Telegram-Fotos werden direkt mit `sendPhoto` der Bot API versendet.
+- Versandflags bleiben über Containerneustarts hinweg erhalten.
+- Der laufende Daemon akzeptiert `/snapshot` und `/snapshop` aus dem
+  konfigurierten Telegram-Chat. Er reiht ein aktuelles Kamerabild ein, ohne
+  Meilensteinflags zu verändern.
 
-## Docker deployment
+## Docker-Bereitstellung
 
 ```text
-Container:    bambu-telegram-monitor
-Image:        bambu-telegram-monitor:local
-Config:       /etc/bambu-telegram/config.yaml
-Data volume:  bambu-telegram-data -> /var/lib/bambu-telegram
+Container:     bambu-telegram-monitor
+Image:         bambu-telegram-monitor:local
+Konfiguration: /etc/bambu-telegram/config.yaml
+Daten-Volume:  bambu-telegram-data -> /var/lib/bambu-telegram
 ```
 
-## Telegram config
+## Telegram-Konfiguration
 
 ```yaml
 telegram:
@@ -51,34 +56,39 @@ telegram:
   timeout_seconds: 30
 ```
 
-## Before changing code
+## Vor Codeänderungen
 
-Read:
+Folgende Dateien lesen:
 
 1. `docs/AGENTS.md`
 2. `README.md`
-3. `docs/INSTALL.md`
+3. `docs/MANUAL_DOCKER_INSTALL.md`
 4. `config.example.yaml`
 5. `bambu_monitor.py`
 
-Run:
+Anschließend ausführen:
 
 ```bash
 python3 -m py_compile bambu_monitor.py
 ```
 
-## Best next refactor
+## Nächste sinnvolle Überarbeitung
 
-Do not alter trigger behavior. Refactor I/O so the MQTT callback only merges state and queues events. Camera and Telegram HTTP operations should run in a bounded worker queue with retry/backoff.
+Die Trigger-Semantik nicht verändern. Ein- und Ausgabe so überarbeiten, dass
+der MQTT-Callback nur Statusdaten zusammenführt und Ereignisse einreiht. Kamera-
+und Telegram-HTTP-Aufgaben sollen in einer begrenzten Worker-Warteschlange mit
+Wiederholungsversuchen und Backoff laufen.
 
-## Tests to add
+## Zu ergänzende Tests
 
-- layer 1 -> layer 2 emits once
-- 49 -> 50 -> 51 emits 50% once
-- 99% while RUNNING does not emit the final snapshot
-- 98 -> 99% while RUNNING emits the final snapshot once
-- a later FINISH does not emit a duplicate
-- repeated PAUSE delta reports do not duplicate
-- RUNNING -> FAILED emits failed once
-- persisted sent state survives restart
-- Telegram client sends multipart photo with correct chat ID and caption
+- Layer 1 zu Layer 2 löst genau einmal aus.
+- 49 zu 50 zu 51 % löst die 50-%-Meldung genau einmal aus.
+- 99 % bei `RUNNING` ohne vorherigen Wert unter 99 % löst den letzten Snapshot
+  nicht aus.
+- 98 zu 99 % bei `RUNNING` löst den letzten Snapshot genau einmal aus.
+- Ein späteres `FINISH` erzeugt kein Duplikat.
+- Wiederholte `PAUSE`-Delta-Berichte erzeugen keine Duplikate.
+- `RUNNING` zu `FAILED` löst die Fehlermeldung genau einmal aus.
+- Persistierte Versandflags überleben einen Neustart.
+- Der Telegram-Client sendet ein Multipart-Foto mit korrekter Chat-ID und
+  Bildunterschrift.
