@@ -12,6 +12,8 @@ snapshot_cleanup_interval_hours: 6
 
 printers:
   - name: P1S Büro
+    # Supported models: p1s (default), p2s, x1, x1c
+    model: p1s
     enabled: true
     host: 192.168.192.50
     serial: "01P00A123456789"
@@ -32,6 +34,7 @@ printers:
       failed: true
 
   - name: P1S Werkstatt
+    model: p1s
     enabled: false
     host: 192.168.192.51
     serial: "01P00A987654321"
@@ -45,6 +48,11 @@ printers:
       finished: true
       pause: true
       failed: true
+
+# Selects the notification adapter. Provider-specific settings may remain in
+# the legacy top-level section or move below messaging.<provider> later.
+messaging:
+  provider: telegram
 
 telegram:
   # Token received from @BotFather.

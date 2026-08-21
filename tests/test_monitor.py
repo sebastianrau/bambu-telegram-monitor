@@ -57,6 +57,67 @@ from bambu_monitor import (  # noqa: E402
     run_bambu_connection_test,
     run_scheduled_snapshot_cleanup,
 )
+from bambu_monitor.printers import create_printer  # noqa: E402
+from bambu_monitor.printers.p1s import P1SPrinter  # noqa: E402
+from bambu_monitor.printers.p2s import P2SPrinter  # noqa: E402
+from bambu_monitor.printers.x1 import X1Printer  # noqa: E402
+from bambu_monitor.messaging import MessageClient, create_message_client  # noqa: E402
+
+
+class PrinterAdapterTests(unittest.TestCase):
+    def printer_config(self, model):
+        return {
+            "model": model,
+            "host": "192.0.2.1",
+            "serial": "SERIAL1",
+            "access_code": "secret",
+        }
+
+    def test_factory_selects_model_adapter(self):
+        self.assertIsInstance(create_printer(self.printer_config("p1s")), P1SPrinter)
+        self.assertIsInstance(create_printer(self.printer_config("p2s")), P2SPrinter)
+        self.assertIsInstance(create_printer(self.printer_config("x1c")), X1Printer)
+
+    def test_factory_defaults_legacy_config_to_p1s(self):
+        cfg = self.printer_config("p1s")
+        del cfg["model"]
+        self.assertIsInstance(create_printer(cfg), P1SPrinter)
+
+    def test_factory_rejects_unknown_model(self):
+        with self.assertRaisesRegex(ValueError, "Unsupported printer model"):
+            create_printer(self.printer_config("a99"))
+
+    def test_adapter_owns_mqtt_configuration_and_report_decoding(self):
+        adapter = create_printer(self.printer_config("p1s"))
+        client = Mock()
+        adapter.configure_mqtt_client(client)
+        client.username_pw_set.assert_called_once_with("bblp", "secret")
+        client.tls_set.assert_called_once()
+
+        state = {}
+        normalized = adapter.decode_mqtt_message(
+            b'{"print":{"gcode_state":"RUNNING","mc_percent":5}}', state
+        )
+        self.assertEqual(normalized["gcode_state"], "RUNNING")
+        self.assertEqual(state["print"]["mc_percent"], 5)
+
+
+class MessagingAdapterTests(unittest.TestCase):
+    def test_legacy_telegram_config_creates_message_client(self):
+        client = create_message_client({
+            "telegram": {"bot_token": "token", "chat_id": "1"}
+        })
+        self.assertIsInstance(client, MessageClient)
+        self.assertIsInstance(client, TelegramClient)
+
+    def test_nested_messaging_config_creates_message_client(self):
+        client = create_message_client({
+            "messaging": {
+                "provider": "telegram",
+                "telegram": {"bot_token": "token", "chat_id": "1"},
+            }
+        })
+        self.assertIsInstance(client, TelegramClient)
 
 
 class RuntimeTests(unittest.TestCase):
@@ -71,7 +132,7 @@ class RuntimeTests(unittest.TestCase):
                 "access_code": "secret",
                 "notifications": {},
             },
-            telegram=Mock(),
+            messenger=Mock(),
             state_store=self.state,
             snapshot_dir=Path(self.tempdir.name),
         )
@@ -248,7 +309,7 @@ class ConfigTests(unittest.TestCase):
             "printers": [{"host": "192.0.2.1", "serial": "SERIAL1", "access_code": "secret"}],
             "telegram": {"chat_id": "1"},
         }
-        with patch("bambu_monitor.yaml.safe_load", return_value=cfg):
+        with patch("bambu_monitor.config.yaml.safe_load", return_value=cfg):
             with self.assertRaisesRegex(ValueError, "bot_token"):
                 load_config(path)
 
@@ -258,7 +319,7 @@ class ConfigTests(unittest.TestCase):
             "printers": [{"enabled": False}],
             "telegram": {"bot_token": "token", "chat_id": "1"},
         }
-        with patch("bambu_monitor.yaml.safe_load", return_value=cfg):
+        with patch("bambu_monitor.config.yaml.safe_load", return_value=cfg):
             with self.assertRaisesRegex(ValueError, "enabled"):
                 load_config(path)
 
@@ -282,7 +343,7 @@ class PersistenceAndTelegramTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             image = Path(directory) / "snapshot.jpg"
             image.write_bytes(b"jpeg")
-            with patch("bambu_monitor.requests.post", return_value=response) as post:
+            with patch("bambu_monitor.messaging.telegram.requests.post", return_value=response) as post:
                 client.send_image(image, "P1S", "Druck fertig", 100)
 
         call = post.call_args
@@ -324,8 +385,8 @@ class PersistenceAndTelegramTests(unittest.TestCase):
         sent = Mock()
         sent.json.return_value = {"ok": True}
         cfg = {"telegram": {"bot_token": "token"}}
-        with patch("bambu_monitor.requests.get", side_effect=[pending, fresh]) as get:
-            with patch("bambu_monitor.requests.post", return_value=sent) as post:
+        with patch("bambu_monitor.messaging.telegram.requests.get", side_effect=[pending, fresh]) as get:
+            with patch("bambu_monitor.messaging.telegram.requests.post", return_value=sent) as post:
                 self.assertTrue(find_telegram_chat_ids(cfg, 30))
         self.assertEqual(get.call_args_list[0].kwargs["params"]["offset"], -1)
         self.assertEqual(get.call_args_list[1].kwargs["params"]["offset"], 41)
@@ -420,8 +481,13 @@ class ConnectionTestTests(unittest.TestCase):
                 output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_bytes(b"jpeg")
 
-            with patch("bambu_monitor.test_printer_mqtt", return_value=True) as mqtt_test:
-                with patch("bambu_monitor.capture_p1s_snapshot", side_effect=fake_capture):
+            with patch("bambu_monitor.diagnostics.test_printer_mqtt", return_value=True) as mqtt_test:
+                with patch(
+                    "bambu_monitor.printers.p1s.P1SPrinter.capture_snapshot",
+                    side_effect=lambda output: fake_capture(
+                        "host", "code", output, timeout=3, warmup_frames=2
+                    ),
+                ):
                     output_dir = Path(directory) / "local-output"
                     self.assertTrue(run_bambu_connection_test(cfg, 3, output_dir))
 

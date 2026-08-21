@@ -1,6 +1,6 @@
-# Bambu P1S Telegram Monitor
+# Bambu Telegram Monitor
 
-Docker-basierter Monitor für einen oder mehrere Bambu-Lab-P1S-Drucker. Bei
+Docker-basierter Monitor für einen oder mehrere Bambu-Lab-Drucker. Bei
 wichtigen Druckereignissen nimmt er ein aktuelles Bild der Innenraumkamera auf
 und sendet es über Telegram.
 
@@ -20,6 +20,36 @@ und sendet es über Telegram.
 - Telegram Bot API: HTTPS
 - Konfiguration: YAML
 - Bereitstellung: Docker
+
+## Druckermodelle
+
+Jeder Drucker kann über `model: p1s`, `model: p2s`, `model: x1` oder
+`model: x1c` einem Adapter zugeordnet werden. Ohne `model` wird aus
+Kompatibilitätsgründen `p1s` verwendet. MQTT-Konfiguration, Topics,
+Statusdekodierung und Snapshot-Erzeugung liegen vollständig in den
+modellspezifischen Adaptern unter
+`bambu_monitor/printers/`. Neue Modelle werden dort implementiert und in
+`bambu_monitor/printers/registry.py` registriert.
+
+## Messaging
+
+Die Druckerlaufzeit hängt nur vom neutralen `MessageClient`-Interface ab.
+Telegram liegt als erster Adapter unter `bambu_monitor/messaging/`; weitere
+Provider wie Slack können dort ergänzt und in der Messaging-Registry
+registriert werden. Der Provider wird unabhängig vom Druckermodell gewählt:
+
+```yaml
+messaging:
+  provider: telegram
+```
+
+Die bestehende oberste `telegram:`-Sektion bleibt kompatibel. Alternativ können
+Provider-Einstellungen künftig unter `messaging.telegram` liegen.
+
+Die Anwendung ist als Python-Paket gegliedert: `app.py` enthält nur Start und
+Shutdown, während Konfiguration, Zustand, Telegram, Druckerlaufzeit,
+Snapshot-Bereinigung und Diagnosen in eigenen Modulen liegen. Die bisherige
+Datei `bambu_monitor.py` bleibt als kompatibler CLI-Starter erhalten.
 
 ## Dokumentation
 
