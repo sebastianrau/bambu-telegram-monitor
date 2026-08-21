@@ -44,12 +44,37 @@ messaging:
 ```
 
 Die bestehende oberste `telegram:`-Sektion bleibt kompatibel. Alternativ können
-Provider-Einstellungen künftig unter `messaging.telegram` liegen.
+Provider-Einstellungen bereits heute unter `messaging.telegram` liegen.
 
 Die Anwendung ist als Python-Paket gegliedert: `app.py` enthält nur Start und
 Shutdown, während Konfiguration, Zustand, Telegram, Druckerlaufzeit,
 Snapshot-Bereinigung und Diagnosen in eigenen Modulen liegen. Die bisherige
 Datei `bambu_monitor.py` bleibt als kompatibler CLI-Starter erhalten.
+
+```text
+bambu_monitor/
+├── app.py                 # CLI, Start und Shutdown
+├── printer.py             # gemeinsame Runtime und Zustandsautomat
+├── printers/              # MQTT, Statusdekodierung und Kamera je Modell
+│   ├── base.py
+│   ├── registry.py
+│   ├── p1s.py
+│   ├── p2s.py
+│   └── x1.py
+├── messaging/             # austauschbare Benachrichtigungskanäle
+│   ├── base.py
+│   ├── registry.py
+│   └── telegram.py
+├── config.py
+├── diagnostics.py
+├── snapshots.py
+└── state.py
+```
+
+`P2SPrinter` und `X1Printer` sind eigene Adapter, delegieren MQTT und Kamera
+aktuell jedoch noch an `P1SPrinter`. Reale Protokollabweichungen müssen in den
+jeweiligen Adapterdateien ergänzt und mit der entsprechenden Hardware getestet
+werden.
 
 ## Dokumentation
 

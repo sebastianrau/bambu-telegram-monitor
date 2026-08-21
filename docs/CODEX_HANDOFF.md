@@ -1,13 +1,12 @@
 # Codex-Übergabe
 
-## Ziel
+## Ziel und aktueller Stand
 
-Die Entwicklung des Bambu P1S Telegram Monitors ohne Zugriff auf den
-ursprünglichen Chat fortsetzen.
+Der Bambu Monitor überwacht mehrere konfigurierte Bambu-Lab-Drucker, erkennt
+Druckereignisse, erzeugt modellspezifische Kamerasnapshots und sendet sie über
+einen austauschbaren Messaging-Provider.
 
-## Aktuell freigegebener Funktionsumfang
-
-Benachrichtigungen mit einem aktuellen Bild der P1S-Kamera bei:
+Aktuell implementiert:
 
 1. Start des Druckauftrags
 2. Abschluss von Layer 1
@@ -15,25 +14,63 @@ Benachrichtigungen mit einem aktuellen Bild der P1S-Kamera bei:
 4. Erreichen von 99 % Druckfortschritt
 5. Pause
 6. Fehler oder Abbruch
+7. Manueller Snapshot über Telegram
 
-Die Benachrichtigungen werden über die **Telegram Bot API** gesendet. WhatsApp
-gehört nicht mehr zum Funktionsumfang des Projekts.
+## Architekturentscheidungen
 
-## Bereits getroffene Entscheidungen
+- `PrinterRuntime` enthält nur gemeinsame Laufzeit, Zustandsautomat,
+  Event-Queue, Wiederholungsversuche und Zustellung.
+- Jeder Adapter in `bambu_monitor/printers/` besitzt MQTT-Erzeugung,
+  Authentifizierung, Topics, Statusdekodierung und Snapshot-Erzeugung.
+- `P1SPrinter` implementiert derzeit das konkrete P1/A1-LAN-Protokoll.
+- `P2SPrinter` und `X1Printer` sind getrennte Adapter, delegieren aktuell
+  jedoch noch an `P1SPrinter`. Abweichende Protokolle dort ergänzen.
+- `MessageClient` entkoppelt die Runtime vom Provider.
+- Telegram befindet sich in `bambu_monitor/messaging/telegram.py`.
+- Neue Provider wie Slack werden als eigener Adapter plus Registry-Eintrag
+  ergänzt; Änderungen an Druckeradaptern sind dafür nicht erforderlich.
+- `bambu_monitor.py` bleibt ein kompatibler Starter; die Anwendung liegt im
+  Paket `bambu_monitor/`.
 
-- Der letzte Snapshot wird beim Übergang von einem zuvor beobachteten
-  `mc_percent < 99` zu `mc_percent >= 99` ausgelöst. Spätere Berichte mit
-  100 % oder `FINISH` erzeugen kein Duplikat.
+## Trigger-Semantik
+
+- Der letzte Snapshot wird beim Übergang von einem beobachteten
+  `mc_percent < 99` zu `mc_percent >= 99` ausgelöst.
+- Spätere Berichte mit 100 % oder `FINISH` erzeugen kein Duplikat.
 - Layer 1 gilt bei `layer_num >= 2` als abgeschlossen.
-- `FAILED` wird neutral als `Druck abgebrochen/fehlgeschlagen` dargestellt.
-- P1-MQTT-Berichte sind partiell beziehungsweise Delta-Updates und müssen vor
-  der Auswertung tief zusammengeführt werden.
-- Die P1S-Kamera verwendet lokal TLS/JPEG auf TCP 6000.
-- Telegram-Fotos werden direkt mit `sendPhoto` der Bot API versendet.
-- Versandflags bleiben über Containerneustarts hinweg erhalten.
-- Der laufende Daemon akzeptiert `/snapshot` und `/snapshop` aus dem
-  konfigurierten Telegram-Chat. Er reiht ein aktuelles Kamerabild ein, ohne
-  Meilensteinflags zu verändern.
+- `FAILED` wird als `Druck abgebrochen/fehlgeschlagen` dargestellt.
+- Erste Beobachtungen eines bereits aktiven oder abgeschlossenen Drucks werden
+  als Baseline behandelt.
+- Persistente Flags verhindern Duplikate nach Neustarts.
+
+Diese Semantik nicht nebenbei verändern.
+
+## Konfiguration
+
+Druckermodell:
+
+```yaml
+printers:
+  - name: P1S Büro
+    model: p1s
+    host: 192.0.2.10
+    serial: "SERIAL"
+    access_code: "ACCESS-CODE"
+```
+
+Messaging-Provider mit kompatibler Telegram-Sektion:
+
+```yaml
+messaging:
+  provider: telegram
+
+telegram:
+  bot_token: "..."
+  chat_id: "..."
+  commands_enabled: true
+```
+
+Provider-Einstellungen können alternativ unter `messaging.telegram` liegen.
 
 ## Docker-Bereitstellung
 
@@ -42,53 +79,41 @@ Container:     bambu-telegram-monitor
 Image:         bambu-telegram-monitor:local
 Konfiguration: /etc/bambu-telegram/config.yaml
 Daten-Volume:  bambu-telegram-data -> /var/lib/bambu-telegram
+Einstieg:      python /opt/bambu-telegram/bambu_monitor.py
 ```
 
-## Telegram-Konfiguration
-
-```yaml
-telegram:
-  bot_token: "..."
-  chat_id: "..."
-  caption: "🖨️ {printer}: {milestone} ({progress}%)"
-  disable_notification: false
-  protect_content: false
-  timeout_seconds: 30
-```
+Der Docker-Build kopiert sowohl den Starter als auch das Paket
+`bambu_monitor/`.
 
 ## Vor Codeänderungen
 
-Folgende Dateien lesen:
+Lesen:
 
 1. `docs/AGENTS.md`
 2. `README.md`
 3. `docs/MANUAL_DOCKER_INSTALL.md`
 4. `config.example.yaml`
-5. `bambu_monitor.py`
+5. betroffene Module unter `bambu_monitor/`
 
-Anschließend ausführen:
+Validieren:
 
 ```bash
-python3 -m py_compile bambu_monitor.py
+python3 -m unittest discover -s tests -v
+PYTHONPYCACHEPREFIX=/tmp/bambu-pycache python3 -m compileall -q \
+  bambu_monitor.py bambu_monitor tests
 ```
 
-## Nächste sinnvolle Überarbeitung
+## Nächste sinnvolle Erweiterungen
 
-Die Trigger-Semantik nicht verändern. Ein- und Ausgabe so überarbeiten, dass
-der MQTT-Callback nur Statusdaten zusammenführt und Ereignisse einreiht. Kamera-
-und Telegram-HTTP-Aufgaben sollen in einer begrenzten Worker-Warteschlange mit
-Wiederholungsversuchen und Backoff laufen.
+- Reale P2S- und X1/X1C-Protokollunterschiede in deren Adaptern implementieren
+  und mit Hardware/Fixtures testen.
+- Slack als zweiten `MessageClient` implementieren.
+- Provider-spezifische Konfigurationsvalidierung weiter ausbauen.
+- Deterministische Ereignis-IDs ergänzen.
+- Geheimnisse über Docker-Secrets oder Umgebungsvariablen unterstützen.
 
-## Zu ergänzende Tests
+## Testabdeckung
 
-- Layer 1 zu Layer 2 löst genau einmal aus.
-- 49 zu 50 zu 51 % löst die 50-%-Meldung genau einmal aus.
-- 99 % bei `RUNNING` ohne vorherigen Wert unter 99 % löst den letzten Snapshot
-  nicht aus.
-- 98 zu 99 % bei `RUNNING` löst den letzten Snapshot genau einmal aus.
-- Ein späteres `FINISH` erzeugt kein Duplikat.
-- Wiederholte `PAUSE`-Delta-Berichte erzeugen keine Duplikate.
-- `RUNNING` zu `FAILED` löst die Fehlermeldung genau einmal aus.
-- Persistierte Versandflags überleben einen Neustart.
-- Der Telegram-Client sendet ein Multipart-Foto mit korrekter Chat-ID und
-  Bildunterschrift.
+Die Tests decken Zustandsübergänge, persistente Flags, Telegram-Fotoversand,
+Telegram-Kommandos, Konfigurationsvalidierung, Snapshot-Bereinigung,
+Verbindungstest, Drucker-Registry, MQTT-Dekodierung und Messaging-Registry ab.

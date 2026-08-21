@@ -50,7 +50,7 @@ printers:
       failed: true
 
 # Selects the notification adapter. Provider-specific settings may remain in
-# the legacy top-level section or move below messaging.<provider> later.
+# the compatible top-level section or live below messaging.<provider>.
 messaging:
   provider: telegram
 

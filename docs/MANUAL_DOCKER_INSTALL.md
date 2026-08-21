@@ -57,11 +57,29 @@ nano config.yaml
 
 Mindestens folgende Werte eintragen:
 
+- Druckermodell (`model`, zum Beispiel `p1s`)
 - IP-Adresse des Druckers
 - Seriennummer des Druckers
 - Bambu-LAN-Access-Code
 - Telegram Bot Token
 - Telegram Chat-ID
+
+Messaging-Provider und Drucker werden unabhängig ausgewählt:
+
+```yaml
+printers:
+  - name: P1S Büro
+    model: p1s
+    enabled: true
+    host: 192.0.2.10
+    serial: "SERIAL"
+    access_code: "ACCESS-CODE"
+
+messaging:
+  provider: telegram
+```
+
+Ohne `model` wird aus Kompatibilitätsgründen `p1s` verwendet.
 
 Für Docker müssen diese Pfade verwendet werden:
 
@@ -101,7 +119,10 @@ sudo docker build -t bambu-telegram-monitor:local .
 
 ## 8. Telegram-Chat-ID ermitteln
 
-Zuerst muss unter `telegram.bot_token` der von BotFather erhaltene Bot-Token in `/etc/bambu-telegram/config.yaml` eingetragen sein.
+Zuerst muss bei Provider `telegram` unter `telegram.bot_token` der von
+BotFather erhaltene Bot-Token in `/etc/bambu-telegram/config.yaml` eingetragen
+sein. Die oberste `telegram:`-Sektion ist die kompatible Kurzform; alternativ
+können dieselben Werte unter `messaging.telegram` stehen.
 
 Danach das Python-Skript einmalig im Container starten:
 
@@ -129,6 +150,9 @@ sudo nano /etc/bambu-telegram/config.yaml
 Die ermittelte ID unter `telegram.chat_id` eintragen:
 
 ```yaml
+messaging:
+  provider: telegram
+
 telegram:
   bot_token: "BOT-TOKEN"
   chat_id: "123456789"
@@ -212,6 +236,14 @@ ausgeführt; der Bot gibt stattdessen die passenden Drucker aus.
 
 Nur die konfigurierte Chat-ID ist berechtigt. Die Befehle verwenden Telegram
 `getUpdates`; ein Telegram-Webhook darf daher nicht gleichzeitig aktiv sein.
+Außerdem darf pro Bot-Token nur eine Monitor-Instanz `getUpdates` verwenden;
+andernfalls antwortet Telegram mit HTTP 409. Wer nur ausgehende
+Benachrichtigungen benötigt, kann das Polling deaktivieren:
+
+```yaml
+telegram:
+  commands_enabled: false
+```
 
 ## Container verwalten
 

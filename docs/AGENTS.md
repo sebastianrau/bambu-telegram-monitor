@@ -2,18 +2,32 @@
 
 ## Projekt
 
-Der Bambu P1S Telegram Monitor ist ein Python-Daemon zur Überwachung mehrerer
-Bambu-Lab-P1S-Drucker in einem vertrauenswürdigen lokalen Netzwerk. Bei
-Druckereignissen sendet er Snapshots über die Telegram Bot API.
+Der Bambu Monitor ist ein Python-Daemon zur Überwachung mehrerer Bambu-Lab-
+Drucker in einem vertrauenswürdigen lokalen Netzwerk. Druckermodelle und
+Messaging-Ziele sind über Adapter und Registries entkoppelt.
 
-## Kernablauf
+## Architektur
 
-1. Verbindung zu jedem konfigurierten Drucker über MQTT/TLS auf TCP 8883.
-2. Tiefes Zusammenführen partieller MQTT-Berichte mit dem gesammelten Druckerstatus.
-3. Erkennen konfigurierter Meilensteine und Statusübergänge.
-4. Aufnehmen eines JPEGs über das lokale TLS-Kameraprotokoll auf TCP 6000.
-5. Senden des JPEGs über `sendPhoto` der Telegram Bot API.
-6. Persistieren versendeter Ereignisse, um Duplikate nach Neustarts zu vermeiden.
+- `bambu_monitor/app.py`: CLI, Start, Signalbehandlung und Shutdown
+- `bambu_monitor/printer.py`: gemeinsame Laufzeit, Zustandsautomat und Event-Queue
+- `bambu_monitor/printers/`: modellspezifisches MQTT- und Kamera-Handling
+- `bambu_monitor/messaging/`: neutrales Messaging-Interface und Provider
+- `bambu_monitor/state.py`: persistente Ereignisflags
+- `bambu_monitor/snapshots.py`: Aufbewahrung und Bereinigung
+- `bambu_monitor/diagnostics.py`: MQTT- und Kamera-Verbindungstests
+- `bambu_monitor.py`: kompatibler CLI-Starter
+
+Der gemeinsame `PrinterRuntime` darf keine modellspezifischen Topics,
+Authentifizierungsverfahren oder Kameraprotokolle enthalten. Jeder
+Druckeradapter verantwortet:
+
+1. Erzeugen und Konfigurieren seines MQTT-Clients
+2. MQTT-Verbindung, Topics und initiale Statusabfrage
+3. Dekodieren und Normalisieren eingehender Berichte
+4. Erzeugen eines Snapshots
+
+Ausgehende Benachrichtigungen laufen ausschließlich über `MessageClient`.
+Provider-spezifische APIs dürfen nicht in Druckeradapter oder Runtime gelangen.
 
 ## Verbindliche Trigger-Semantik
 
@@ -24,102 +38,82 @@ Nicht ohne ausdrückliche Anforderung ändern:
   wenn die erste persistierte Beobachtung bereits einen aktiven Druck zeigt
 - `progress50`: erstes `mc_percent >= 50`
 - `finished`: Übergang von einem zuvor beobachteten `mc_percent < 99` zu
-  `mc_percent >= 99`; spätere Berichte mit 100 % oder `FINISH` dürfen keine
-  doppelte Meldung auslösen
+  `mc_percent >= 99`; spätere 100-%- oder `FINISH`-Berichte erzeugen kein Duplikat
 - `pause`: Übergang zu `gcode_state == "PAUSE"`
 - `failed`: `gcode_state == "FAILED"`
 - Text für `FAILED`: `Druck abgebrochen/fehlgeschlagen`
 
-MQTT-Nachrichten können Delta-Updates sein. Vor der Auswertung immer
-zusammenführen.
+MQTT-Berichte können Delta-Updates sein. Das Zusammenführen erfolgt im
+zuständigen Druckeradapter vor der Auswertung.
 
-## Telegram
+## Druckeradapter
 
-Konfiguration:
+Registrierung erfolgt in `bambu_monitor/printers/registry.py`. Aktuelle
+Modellschlüssel: `p1`, `p1s`, `p2s`, `x1`, `x1c`.
+
+`P2SPrinter` und `X1Printer` besitzen eigene Erweiterungspunkte, verwenden
+aktuell aber noch das Verhalten von `P1SPrinter`. Abweichende MQTT- oder
+Kameraprotokolle müssen in den jeweiligen Dateien implementiert werden.
+
+### P1S-Protokoll
+
+- MQTT/TLS auf TCP 8883
+- Benutzername `bblp`, LAN-Access-Code als Passwort
+- `device/<serial>/report` und `device/<serial>/request`
+- selbstsigniertes Druckerzertifikat
+- Kamera über TLS auf TCP 6000
+- P1/A1-JPEG-Frame-Protokoll
+
+Rückwärtsentwickelten Protokollcode in den Druckeradaptern isoliert halten.
+
+## Messaging
+
+Providerwahl:
 
 ```yaml
-telegram:
-  bot_token: "..."
-  chat_id: "..."
-  caption: "🖨️ {printer}: {milestone} ({progress}%)"
+messaging:
+  provider: telegram
 ```
 
-Die aktuelle Implementierung ruft Folgendes auf:
+Die bisherige oberste `telegram:`-Sektion bleibt kompatibel. Alternativ werden
+Einstellungen unter `messaging.telegram` unterstützt. Neue Provider erhalten
+eine eigene Datei unter `bambu_monitor/messaging/` und einen Eintrag in
+`messaging/registry.py`.
 
-```text
-POST https://api.telegram.org/bot<TOKEN>/sendPhoto
-```
+Telegram verwendet `sendPhoto` für Bilder und optional `getUpdates` für
+`/snapshot` sowie `/snapshop`. Nur die konfigurierte `chat_id` ist
+berechtigt. Pro Bot darf nur ein `getUpdates`-Consumer laufen; gleichzeitig
+darf kein Webhook aktiv sein.
 
-Das JPEG wird als `multipart/form-data` hochgeladen.
-
-Der laufende Daemon verwendet Telegram `getUpdates` für `/snapshot` und den
-historischen, vom Benutzer gewünschten Alias `/snapshop`. Nur die konfigurierte
-`chat_id` ist berechtigt. Manuelle Snapshots müssen die begrenzte
-Drucker-Ereigniswarteschlange verwenden und dürfen persistente Meilensteinflags
-nicht verändern. Druckerauswahlen stimmen ohne Beachtung der Groß-/Kleinschreibung
-mit einem beliebigen Teil des konfigurierten Namens oder dem Anfang der
-Seriennummer überein. Mehrdeutige Teiltreffer dürfen nicht ausgeführt werden.
-
-Den Bot-Token niemals protokollieren.
-
-## Protokollannahmen
-
-### Bambu MQTT
-
-- TLS auf TCP 8883
-- Benutzername `bblp`
-- Passwort ist der LAN-Access-Code
-- `device/<serial>/report`
-- `device/<serial>/request`
-- selbstsigniertes Druckerzertifikat
-
-### P1S-Kamera
-
-- TLS auf TCP 6000
-- P1/A1-JPEG-Frame-Protokoll
-- 80-Byte-Authentifizierungspaket
-- 16-Byte-Frame-Header mit anschließendem JPEG
-
-Rückwärtsentwickelten Code für das Druckerprotokoll isoliert halten.
+Manuelle Snapshots verwenden die begrenzte Event-Queue und verändern keine
+persistenten Meilensteinflags. Mehrdeutige Druckerauswahlen werden abgelehnt.
 
 ## Sicherheit
 
-Niemals committen:
+Niemals committen oder protokollieren:
 
 - Bambu-LAN-Access-Codes
-- Telegram-Bot-Token
+- Messaging-Zugangsdaten wie Telegram-Bot-Token
 - echte produktive `config.yaml`
-
-## Empfohlene technische Verbesserungen
-
-1. Status- und Meilensteinübergänge mit Unit-Tests absichern.
-2. Kamera- und Telegram-HTTP-Arbeit aus dem MQTT-Callback in eine begrenzte
-   Worker-Warteschlange verschieben.
-3. Deterministische Ereignis-IDs ergänzen.
-4. Wiederholungsversuche mit Backoff ergänzen.
-5. Konfiguration beim Start validieren.
-6. CLI-Tests für MQTT, Kamera und Telegram ergänzen.
-7. Docker-Secrets oder Umgebungsvariablen für Geheimnisse unterstützen.
 
 ## Validierung
 
 ```bash
-python3 -m py_compile bambu_monitor.py
+python3 -m unittest discover -s tests -v
+PYTHONPYCACHEPREFIX=/tmp/bambu-pycache python3 -m compileall -q \
+  bambu_monitor.py bambu_monitor tests
+python3 bambu_monitor.py --help
+python3 -m bambu_monitor --help
 ```
 
-Wenn Tests vorhanden sind:
-
-```bash
-python3 -m unittest discover -v
-```
-
-## Dateien
+## Wichtige Dateien
 
 - `bambu_monitor.py`
+- `bambu_monitor/`
 - `config.example.yaml`
 - `Dockerfile`
-- `update.sh`
-- `docs/MANUAL_DOCKER_INSTALL.md`
-- `requirements.txt`
 - `README.md`
+- `docs/MANUAL_DOCKER_INSTALL.md`
 - `docs/CODEX_HANDOFF.md`
+- `requirements.txt`
+- `tests/`
